@@ -1,0 +1,81 @@
+{
+  "name": "antigravity-browser-agent",
+  "version": "0.12.0",
+  "private": true,
+  "author": "Aster Project",
+  "description": "A local, task-approved browser agent inspired by Google Antigravity's browser subagent.",
+  "main": "./out/main/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "npm run typecheck && electron-vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "vitest run",
+    "test:e2e": "npm run build && node scripts/e2e-onboarding.mjs && node scripts/e2e-production.mjs && node scripts/e2e-documents.mjs",
+    "test:e2e:documents": "npm run build && node scripts/e2e-documents.mjs",
+    "test:e2e:file": "npm run build && node scripts/e2e-file-agent.mjs",
+    "package:win": "npm run build && electron-builder --win"
+  },
+  "dependencies": {
+    "@google/genai": "^2.20.0",
+    "docx": "^9.7.1",
+    "dotenv": "^16.4.7",
+    "exceljs": "^4.4.0",
+    "lucide-react": "^0.468.0",
+    "pdf-lib": "^1.17.1",
+    "playwright-core": "^1.49.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zod": "^3.24.1"
+  },
+  "overrides": {
+    "exceljs": {
+      "uuid": "^11.1.1"
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "axe-core": "^4.13.0",
+    "electron": "^44.1.1",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^3.0.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5",
+    "vitest": "^4.1.11"
+  },
+  "build": {
+    "appId": "dev.local.aster-browser-agent",
+    "productName": "Aster Browser Agent",
+    "electronDist": "node_modules/electron/dist",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
+      }
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "executableName": "Aster Browser Agent",
+      "artifactName": "Aster-Browser-Agent-${version}-Windows-${arch}.${ext}",
+      "signExecutable": false,
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    }
+  }
+}

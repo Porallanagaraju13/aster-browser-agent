@@ -1,0 +1,26 @@
+node_modules/
+out/
+release/
+.env
+.env.*
+!.env.example
+artifacts/
+*.log
+*.tsbuildinfo
+.DS_Store
+.idea/
+.vscode/
+coverage/
+test-results/
+playwright-report/
+credentials.json
+settings.json
+user-data/
+userdata/
+isolated-browser-profile/
+
+# Local customer-specific diagnostics are not part of the distributable source.
+scripts/e2e-zennx-agent.mjs
+scripts/live-zennx-diagnostic.mjs
+scripts/export-zennx-excel.py
+scripts/redact-existing-artifacts.mjs
