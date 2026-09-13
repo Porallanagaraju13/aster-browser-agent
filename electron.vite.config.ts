@@ -7,7 +7,12 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
-        input: resolve(__dirname, 'src/main/index.ts')
+        input: { index: resolve(__dirname, 'src/main/bootstrap.ts') },
+        output: {
+          // Keep the application chunk beside the entry: its preload/renderer paths
+          // are resolved relative to import.meta.url.
+          chunkFileNames: '[name]-[hash].js'
+        }
       }
     }
   },

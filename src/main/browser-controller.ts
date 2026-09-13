@@ -1,4 +1,4 @@
-import { access, mkdir } from 'node:fs/promises'
+import { mkdir, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { chromium, type BrowserContext, type Download, type Frame, type Locator, type Page } from 'playwright-core'
 import ExcelJS from 'exceljs'
@@ -927,7 +927,15 @@ export class BrowserController {
   }
 
   private async findChromeExecutable(): Promise<string | undefined> {
-    if (process.env['CHROME_PATH']) return process.env['CHROME_PATH']
+    const configuredPath = process.env['CHROME_PATH']?.trim()
+    if (configuredPath) {
+      try {
+        if ((await stat(configuredPath)).isFile()) return configuredPath
+      } catch {
+        // Report the configured browser path rather than a developer-only launch error.
+      }
+      throw new Error('CHROME_PATH does not point to an accessible browser file. Set it to the full path of chrome.exe, or remove CHROME_PATH and install Google Chrome, then restart Aster.')
+    }
 
     const candidates = [
       process.env['PROGRAMFILES'] && path.join(process.env['PROGRAMFILES'], 'Google', 'Chrome', 'Application', 'chrome.exe'),
@@ -940,11 +948,13 @@ export class BrowserController {
 
     for (const candidate of candidates) {
       try {
-        await access(candidate)
-        return candidate
+        if ((await stat(candidate)).isFile()) return candidate
       } catch {
         // Try the next platform-specific path.
       }
+    }
+    if (process.platform === 'win32') {
+      throw new Error('Google Chrome was not found. Install Google Chrome from https://www.google.com/chrome/ and restart Aster. If Chrome is installed in a custom location, set CHROME_PATH to the full path of chrome.exe.')
     }
     return undefined
   }

@@ -1,6 +1,6 @@
 {
   "name": "antigravity-browser-agent",
-  "version": "0.12.0",
+  "version": "0.12.1",
   "private": true,
   "author": "Aster Project",
   "description": "A local, task-approved browser agent inspired by Google Antigravity's browser subagent.",
@@ -14,7 +14,8 @@
     "test:e2e": "npm run build && node scripts/e2e-onboarding.mjs && node scripts/e2e-production.mjs && node scripts/e2e-documents.mjs",
     "test:e2e:documents": "npm run build && node scripts/e2e-documents.mjs",
     "test:e2e:file": "npm run build && node scripts/e2e-file-agent.mjs",
-    "package:win": "npm run build && electron-builder --win"
+    "package:win": "npm run build && electron-builder --win",
+    "test:portable": "node scripts/smoke-portable.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.20.0",
@@ -50,6 +51,7 @@
     "appId": "dev.local.aster-browser-agent",
     "productName": "Aster Browser Agent",
     "electronDist": "node_modules/electron/dist",
+    "beforePack": "scripts/prepare-runtime.cjs",
     "directories": {
       "output": "release"
     },
@@ -61,6 +63,19 @@
       {
         "from": "build/icon.png",
         "to": "icon.png"
+      },
+      {
+        "from": "build/playwright-runtime",
+        "to": "playwright",
+        "filter": [
+          "ffmpeg-*/ffmpeg-win64.exe",
+          "ffmpeg-*/COPYING.LGPLv2.1",
+          "winldd-*/PrintDeps.exe"
+        ]
+      },
+      {
+        "from": "THIRD_PARTY_NOTICES.md",
+        "to": "THIRD_PARTY_NOTICES.md"
       }
     ],
     "win": {

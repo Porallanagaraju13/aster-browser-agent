@@ -59,10 +59,17 @@ Page controls receive short refs such as `e12`. The model uses those refs instea
 
 ## Requirements
 
-- Node.js 20 or newer
+For the portable Windows application:
+
+- Windows x64
 - Google Chrome, or `CHROME_PATH` pointing to a compatible Chromium executable
+- Internet access
 - An API key for Google Gemini, OpenRouter, or Groq
 - A model ID that supports function/tool calling; image input is optional for OpenRouter/Groq
+
+No backend files, Node.js installation, Python installation, or `.env` file are needed to run the portable application. Each recipient enters their own provider key and model on first launch.
+
+For source development, also install Node.js 20 or newer and run `npm ci`. The portable smoke-test script requires Node.js 22 or newer. Build Windows x64 releases on Windows; packaging downloads the recording runtime using the lockfile-installed Playwright CLI.
 
 Suggested starting models are `gemini-3.7-flash` for Google, `google/gemini-3-flash-preview` through OpenRouter, and `qwen/qwen3.6-27b` on Groq. Model availability belongs to the user's provider account and can change; Aster validates the key and exact model ID before saving it.
 
@@ -110,11 +117,18 @@ npm run test:e2e:file # Run a live Gemini request that must create a Word artifa
 npm run test:e2e:documents # Test attachments, Unicode PDF, Save as and persistent downloads without paid model calls
 npm run build        # Create production bundles in out/
 npm run package:win  # Create a portable Windows build in release/
+npm run test:portable # Test the actual packaged EXE, browser actions and recording with an empty external cache
 ```
 
 ## Windows application
 
 Run `npm run package:win`, then open the generated `Aster-Browser-Agent-*-Windows-x64.exe` in the `release` folder. It is a portable desktop application: double-click it directly, with no Node.js command or installer required. The executable and application window use the Aster icon from `build/icon.ico`.
+
+Share only that generated portable EXE, not the inner `win-unpacked` executable. The portable file includes the app's backend, Electron runtime, and Playwright FFmpeg recording executable. It still requires an installed Google Chrome browser; Chrome is not bundled. API keys, settings, browser profiles, and task artifacts are created separately on each recipient's computer and must not be shared with the application.
+
+The packaging hook installs the matching FFmpeg/Windows helper into the ignored `build/playwright-runtime` directory, validates executable and license files, and includes them outside `app.asar`. A bootstrap sets the packaged runtime location before importing Playwright, so recording never depends on the developer's global browser cache. Build-cache `.links` metadata is excluded. See `THIRD_PARTY_NOTICES.md` for recording-runtime notices.
+
+Run `npm run test:portable` after packaging. This launches the actual portable file from an empty working directory and fresh profile, with an unavailable external Playwright cache. A deterministic local mock provider drives a real Chrome navigation, text entry, and click; the test requires a completed task and nonempty WebM recording. It does not contact paid AI providers. This is an isolated-dependency check on the test PC, not a substitute for a separate Windows-machine acceptance test. The executable remains unsigned, so Windows may show a publisher warning.
 
 ## Live cursor and preview
 
