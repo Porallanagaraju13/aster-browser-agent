@@ -53,6 +53,31 @@ describe('bounded browser agent loop', () => {
     expect(next).toHaveBeenCalledTimes(3)
     expect(JSON.stringify(vi.mocked(options.onEvent).mock.calls)).not.toContain('private-test-provider-key')
   })
+  it.each(['fill', 'save_file', 'finish'] as const)('blocks Gemini API-key leakage through %s actions', async type => {
+    const { options, deps } = fixture()
+    const googleKey = ['AIza', 'x'.repeat(35)].join('')
+    options.settings = { provider: 'gemini', model: 'gemini-test-model', apiKey: googleKey }
+    const action: Action = type === 'fill' ? { type, ref: 'e1', text: googleKey }
+      : type === 'save_file' ? { type, filename: 'secret.txt', format: 'txt', content: googleKey }
+        : { type, outcome: 'completed', summary: googleKey }
+    next.mockResolvedValue(action)
+    const result = await runAgent(options, deps)
+    expect(result.outcome).toBe('incomplete')
+    expect(next).toHaveBeenCalledTimes(3)
+    expect(deps.execute).not.toHaveBeenCalled()
+    expect(deps.createArtifact).not.toHaveBeenCalled()
+    expect(options.onArtifact).not.toHaveBeenCalled()
+    expect(JSON.stringify([result, vi.mocked(options.onEvent).mock.calls])).not.toContain(googleKey)
+  })
+  it('uses direct Gemini planning without bypassing browser observation or completion verification', async () => {
+    const { options, deps } = fixture()
+    options.settings = { provider: 'gemini', model: 'gemini-test-model', apiKey: 'synthetic-google-key' }
+    next.mockResolvedValueOnce({ type: 'fill', ref: 'e1', text: 'MrBeast' }).mockResolvedValueOnce(finish)
+    expect(await runAgent(options, deps)).toMatchObject({ outcome: 'completed' })
+    expect(next.mock.calls[0][0].settings).toEqual(options.settings)
+    expect(deps.observe).toHaveBeenCalledTimes(3)
+    expect(deps.execute).toHaveBeenCalledExactlyOnceWith({ type: 'fill', ref: 'e1', text: 'MrBeast' }, options.scope, expect.any(AbortSignal))
+  })
   it('refreshes references after an action instead of reusing the old map', async () => {
     const { options, deps, observation } = fixture()
     vi.mocked(deps.observe).mockResolvedValueOnce(observation).mockResolvedValue({ ...observation, elements: [] })

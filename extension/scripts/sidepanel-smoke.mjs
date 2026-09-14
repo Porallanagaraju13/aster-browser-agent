@@ -8,7 +8,7 @@ import { chromium } from 'playwright-core'
 // This is a real SIDE_PANEL context test, separate from the extension-page E2E.
 // It uses the unchanged production dist, a fresh disposable profile, and no real keys or websites.
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const output = resolve(root, 'test-artifacts')
+const output = resolve(root, 'test-artifacts', 'gemini', 'native-sidepanel')
 await mkdir(output, { recursive: true })
 const profile = await mkdtemp(resolve(tmpdir(), 'aster-sidepanel-smoke-'))
 const headed = process.env.ASTER_TEST_HEADED === '1'
@@ -18,7 +18,8 @@ const context = await chromium.launchPersistentContext(profile, {
   viewport: { width: 1000, height: 760 },
   args: [`--disable-extensions-except=${resolve(root, 'dist')}`, `--load-extension=${resolve(root, 'dist')}`, ...(headed ? ['--window-position=-10000,-10000'] : [])]
 })
-const report = { status: 'running', browser: context.browser()?.version(), headed, productionManifestUnchanged: true, realWebsites: false, realApiKeys: false }
+const report = { status: 'running', browser: context.browser()?.version(), headed, provider: 'gemini', model: 'gemini-test-model', productionManifestUnchanged: true, realWebsites: false, realApiKeys: false }
+const networkAttempts = []
 const waitFor = async (check, description, timeout = 10_000) => {
   const end = Date.now() + timeout
   while (Date.now() < end) {
@@ -30,7 +31,11 @@ const waitFor = async (check, description, timeout = 10_000) => {
 }
 
 try {
-  await context.route(/^https?:\/\//, route => route.abort())
+  await context.route(/^https?:\/\//, async route => {
+    const url = new URL(route.request().url())
+    networkAttempts.push(`${url.origin}${url.pathname}`)
+    await route.abort()
+  })
   const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker', { timeout: 15_000 })
   const extensionId = new URL(worker.url()).host
   const launcher = context.pages()[0]
@@ -73,8 +78,10 @@ try {
   report.playwrightAttachedPanelPage = Boolean(panelPage)
   if (panelPage) {
     await panelPage.getByRole('heading', { name: 'Connect your AI', exact: true }).waitFor()
-    await panelPage.getByLabel('Model ID', { exact: true }).fill('sidepanel-smoke-only-model')
-    assert.equal(await panelPage.getByLabel('Model ID', { exact: true }).inputValue(), 'sidepanel-smoke-only-model')
+    await panelPage.getByRole('combobox').selectOption('gemini')
+    await panelPage.getByLabel('Model ID', { exact: true }).fill('gemini-test-model')
+    assert.equal(await panelPage.getByRole('combobox').inputValue(), 'gemini')
+    assert.equal(await panelPage.getByLabel('Model ID', { exact: true }).inputValue(), 'gemini-test-model')
     assert.equal(await panelPage.getByLabel('API key', { exact: true }).inputValue(), '')
     report.panelModelControlVerified = true
   }
@@ -95,10 +102,22 @@ try {
   // side-panel target. These are same-extension test-owned window references.
   await launcher.evaluate(() => {
     const panel = chrome.extension.getViews().find(view => view !== window && view.location.pathname.endsWith('/panel.html'))
+    const provider = panel.document.querySelector('select')
+    const option = Array.from(provider.options).find(item => item.value === 'gemini')
+    if (!option || option.text !== 'Google Gemini') throw new Error('The native panel must offer Google Gemini')
+    Object.getOwnPropertyDescriptor(panel.HTMLSelectElement.prototype, 'value').set.call(provider, 'gemini')
+    provider.dispatchEvent(new panel.Event('change', { bubbles: true }))
+  })
+  await waitFor(() => launcher.evaluate(() => {
+    const panel = chrome.extension.getViews().find(view => view !== window && view.location.pathname.endsWith('/panel.html'))
+    return panel?.document.querySelector('select')?.value === 'gemini'
+  }), 'Gemini provider selection in the native panel')
+  await launcher.evaluate(() => {
+    const panel = chrome.extension.getViews().find(view => view !== window && view.location.pathname.endsWith('/panel.html'))
     const model = panel.document.querySelector('input[placeholder*="model ID"]')
     const key = panel.document.querySelector('input[type="password"]')
     const setValue = Object.getOwnPropertyDescriptor(panel.HTMLInputElement.prototype, 'value').set
-    setValue.call(model, 'sidepanel-smoke-only-model')
+    setValue.call(model, 'gemini-test-model')
     model.dispatchEvent(new panel.Event('input', { bubbles: true }))
     setValue.call(key, 'sidepanel-synthetic-key-not-real')
     key.dispatchEvent(new panel.Event('input', { bubbles: true }))
@@ -108,7 +127,14 @@ try {
     const panel = chrome.extension.getViews().find(view => view !== window && view.location.pathname.endsWith('/panel.html'))
     return Boolean(panel?.document.querySelector('.task-form'))
   }), 'successful settings save in the actual side panel')
+  const stored = await launcher.evaluate(async () => ({ session: await chrome.storage.session.get('credential'), local: await chrome.storage.local.get('providerSettings') }))
+  assert.deepEqual(stored.session.credential, { provider: 'gemini', model: 'gemini-test-model', apiKey: 'sidepanel-synthetic-key-not-real' })
+  assert.deepEqual(stored.local.providerSettings, { provider: 'gemini', model: 'gemini-test-model' })
+  assert.ok(!JSON.stringify(stored.local).includes('sidepanel-synthetic-key-not-real'))
+  report.geminiProviderSavedInSession = true
+  report.noPersistentApiKey = true
   report.panelSettingsInteractionVerified = true
+  if (panelPage) await panelPage.screenshot({ path: resolve(output, 'gemini-sidepanel.png'), fullPage: true })
   await launcher.evaluate((id) => chrome.sidePanel.close({ windowId: id }), windowId)
   await waitFor(async () => {
     const contexts = await worker.evaluate(() => chrome.runtime.getContexts({ contextTypes: ['SIDE_PANEL'] }))
@@ -117,6 +143,8 @@ try {
   report.sidePanelContextDestroyedOnClose = true
   report.pagehideObserved = await launcher.evaluate(() => Boolean(window.__asterSidePanelSmoke?.pagehide))
   assert.equal(report.pagehideObserved, true, 'The application cancellation handler relies on pagehide')
+  assert.deepEqual(networkAttempts, [], 'Saving settings must not make model or website network requests')
+  report.networkAttempts = networkAttempts
   report.status = 'passed'
 } catch (error) {
   report.status = 'failed'

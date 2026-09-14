@@ -11,6 +11,7 @@ const manifest = JSON.parse(await readFile(resolve(dist, 'manifest.json'), 'utf8
 assert.equal(manifest.manifest_version, 3)
 assert.equal(manifest.version, JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8')).version)
 assert.deepEqual([...manifest.permissions].sort(), ['activeTab', 'downloads', 'scripting', 'sidePanel', 'storage'].sort())
+assert.deepEqual([...manifest.host_permissions].sort(), ['https://openrouter.ai/*', 'https://api.groq.com/*', 'https://generativelanguage.googleapis.com/*'].sort())
 assert.ok(!manifest.externally_connectable && !manifest.web_accessible_resources && !manifest.content_scripts)
 assert.ok(!manifest.content_security_policy.extension_pages.includes('unsafe-eval'))
 const entries = {}
@@ -24,7 +25,7 @@ async function collect(directory) {
     const bytes = await readFile(path)
     if (/\.(?:js|html|json|css)$/.test(name)) {
       const text = bytes.toString('utf8')
-      assert.ok(!/(?:sk-or-v1-[a-f0-9]{40,}|gsk_[A-Za-z0-9]{30,}|test-only-key-never-real)/.test(text), 'Possible credential or test fixture in output')
+      assert.ok(!/(?:sk-or-v1-[a-f0-9]{40,}|gsk_[A-Za-z0-9]{30,}|AIza[A-Za-z0-9_-]{35}|test-only-key-never-real)/.test(text), 'Possible credential or test fixture in output')
       assert.ok(!text.includes('sourceMappingURL='), 'Source maps must not be shipped')
     }
     entries[name] = new Uint8Array(bytes)

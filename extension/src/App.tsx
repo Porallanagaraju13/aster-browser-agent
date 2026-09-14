@@ -3,7 +3,7 @@ import type { Artifact, Attachment, ProviderSettings, RunEvent } from './types'
 import { cleanup, execute, observe } from './browser'
 import { createArtifact, downloadArtifact, readAttachments } from './documents'
 import { runAgent } from './runner'
-import { validateSettings } from './provider'
+import { PROVIDERS, validateSettings } from './provider'
 import { emptySettings, forgetKey, loadSettings, normalizeOrigins, saveSettings } from './settings'
 
 type View = 'work' | 'files' | 'settings'
@@ -163,10 +163,11 @@ export default function App() {
       {view === 'settings' && <section>
         <div className="section-intro"><span className="eyebrow">BRING YOUR OWN MODEL</span><h2>Connect your AI</h2><p>No Aster account or backend. Requests go directly to your selected provider.</p></div>
         <form onSubmit={save} className="stack">
-          <label>Provider<select disabled={running} value={settings.provider} onChange={(event) => { setSettings({ provider: event.target.value as ProviderSettings['provider'], apiKey: '', model: '' }); setSaved(false) }}><option value="openrouter">OpenRouter</option><option value="groq">Groq</option></select></label>
-          <label>Model ID<input disabled={running} required autoComplete="off" placeholder={settings.provider === 'openrouter' ? 'Paste an exact OpenRouter model ID' : 'Paste an exact Groq model ID'} value={settings.model} maxLength={200} onChange={(event) => { setSettings({ ...settings, model: event.target.value }); setSaved(false) }} /></label>
+          <label>Provider<select disabled={running} value={settings.provider} onChange={(event) => { setSettings({ provider: event.target.value as ProviderSettings['provider'], apiKey: '', model: '' }); setSaved(false) }}>{(Object.keys(PROVIDERS) as ProviderSettings['provider'][]).map(provider => <option key={provider} value={provider}>{PROVIDERS[provider].label}</option>)}</select></label>
+          <label>Model ID<input disabled={running} required autoComplete="off" placeholder={`Paste an exact ${PROVIDERS[settings.provider].label} model ID`} value={settings.model} maxLength={200} onChange={(event) => { setSettings({ ...settings, model: event.target.value }); setSaved(false) }} /></label>
           <p className="hint">Use a text/chat model available to your account. Model quality affects task reliability. Your provider may charge for requests.</p>
-          <label>API key<input disabled={running} type="password" required autoComplete="off" spellCheck={false} placeholder="Paste your API key" value={settings.apiKey} maxLength={512} onChange={(event) => { setSettings({ ...settings, apiKey: event.target.value }); setSaved(false) }} /></label>
+          {settings.provider === 'gemini' && <p className="banner">Use your Google AI Studio API key and a Gemini text model ID. Gemini uses the same approved browser actions and file tools—not a chat-only mode or Gemini Native browser control.</p>}
+          <label>API key<input disabled={running} type="password" required autoComplete="off" spellCheck={false} placeholder={settings.provider === 'gemini' ? 'Paste your Google AI Studio API key' : 'Paste your API key'} value={settings.apiKey} maxLength={512} onChange={(event) => { setSettings({ ...settings, apiKey: event.target.value }); setSaved(false) }} /></label>
           <p className="hint">Session-only: the key is cleared when Chrome restarts or the extension reloads. It is not synced or written to a project file.</p>
           <button className="primary" disabled={running} type="submit">Save and open workspace</button>
           <button disabled={running || !settings.apiKey} type="button" className="secondary" onClick={() => { void forgetKey().then(() => { setSettings({ ...settings, apiKey: '' }); setSaved(false); setNotice('API key removed from this browser session.') }).catch(() => setError('Could not remove the key. Try again.')) }}>Forget API key</button>
@@ -193,6 +194,6 @@ export default function App() {
         {(events.length > 0 || result) && <section className="activity"><div className="activity-heading"><h2>Activity</h2><span>{events.filter((item) => item.kind === 'action').length} actions</span></div><ol aria-label="Task activity">{events.map((item) => <li key={item.id} className={item.kind}><span className="event-dot" /><div><p>{item.message}</p><time>{new Date(item.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}{item.step ? ` · Step ${item.step}` : ''}</time></div></li>)}</ol>{result && <div className="result" role="status"><h3>Task result</h3><p>{result}</p>{artifacts.length > 0 && <button className="secondary" onClick={() => setView('files')}>View downloadable files →</button>}</div>}<div ref={scrollRef} /></section>}
       </section>}
       {view === 'files' && <section><div className="section-intro"><span className="eyebrow">YOUR DELIVERABLES</span><h2>Ready to download</h2><p>Real files, created locally. Save them before closing the panel. PDF supports Latin text; choose Word for Telugu and other scripts.</p></div>{artifacts.length === 0 ? <div className="empty"><span aria-hidden="true">↧</span><h3>No files yet</h3><p>Ask Aster for an Excel sheet, PDF, Word document, or text file.</p><button className="secondary" onClick={() => setView('work')}>Back to workspace</button></div> : <ul className="file-list">{artifacts.map((file) => <li key={file.id}><div className="file-type">{file.name.split('.').pop()?.toUpperCase()}</div><div><strong>{file.name}</strong><small>{sizeLabel(file.size)}</small><button onClick={() => { void downloadArtifact(file).catch((value) => setError(message(value))) }}>Download ↓</button></div></li>)}</ul>}{artifacts.length > 0 && <button className="secondary" disabled={running} onClick={() => { artifactList.current = []; setArtifacts([]) }}>Clear this file list</button>}</section>}
-    </main><footer>ASTER <span>Local extension · v0.1.0 beta</span></footer>
+    </main><footer>ASTER <span>Local extension · v0.1.1 beta</span></footer>
   </div>
 }

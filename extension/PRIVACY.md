@@ -1,12 +1,18 @@
 # Aster Chrome Extension — Privacy Policy
 
-Effective date: September 14, 2026. Applies to extension v0.1.0, not the separate desktop application.
+Effective date: September 14, 2026. Applies to extension v0.1.1, not the separate desktop application.
 
 ## Purpose and data flow
 
 Aster helps you carry out a user-approved browser task with your own AI provider. It has no Aster backend, advertising or telemetry service.
 
-When you start a task, Aster sends the task prompt, approved page URL/title/text, interactive control labels, bounded prior task evidence and supported attachment text directly over HTTPS to **the provider you selected: OpenRouter or Groq**. OpenRouter may route requests to an upstream model provider. That provider’s terms, privacy policy, processing/retention practices and account settings apply. Review [OpenRouter privacy](https://openrouter.ai/privacy) or [Groq privacy](https://groq.com/privacy-policy/) before submitting sensitive data.
+When you start a task, Aster sends the task prompt, approved page URL/title/text, interactive control labels, bounded prior task evidence and supported attachment text directly over HTTPS to **the provider you selected: OpenRouter, Groq or Google Gemini**. OpenRouter may route requests to an upstream model provider. Selecting Google Gemini sends requests directly to Google, not through OpenRouter. The selected provider’s terms, privacy policy, processing/retention practices and account settings apply. Review [OpenRouter privacy](https://openrouter.ai/privacy), [Groq privacy](https://groq.com/privacy-policy/) or the [Gemini API terms](https://ai.google.dev/gemini-api/terms) before submitting data.
+
+### Direct Gemini and Google's data handling
+
+For Gemini, Aster authenticates with your Google API key at `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions`, using Google's documented [OpenAI-compatible API](https://ai.google.dev/gemini-api/docs/openai). The Google host permission enables this direct connection; it does not enable Google account access or additional browser-control capabilities. Gemini Native/computer-use mode is not included.
+
+Google distinguishes paid and unpaid Gemini services. Under its unpaid-service terms, inputs and outputs may be used to improve Google products and may receive human review; do not submit sensitive, confidential or personal information to those services. Under its paid-service terms, Google states prompts/responses are not used for product improvement, but safety/security logging still applies. Billing and regional rules affect which terms apply; review the current [Gemini API terms](https://ai.google.dev/gemini-api/terms) for your account. Aster does not choose your billing tier or promise zero retention.
 
 Your API key is sent only as authentication to the fixed selected provider endpoint. It is never included intentionally in webpage commands or model prompts. Password-input values are omitted from page observations, but visible text, URLs, files and user prompts can contain sensitive information; do not submit data you are not authorized to share. Redaction is a best-effort safeguard, not a guarantee.
 

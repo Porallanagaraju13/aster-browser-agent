@@ -1,4 +1,4 @@
-export type Provider = 'openrouter' | 'groq'
+export type Provider = 'openrouter' | 'groq' | 'gemini'
 export interface ProviderSettings { provider: Provider; model: string; apiKey: string }
 export interface Attachment { id: string; name: string; type: string; size: number; base64: string; text?: string }
 export interface Artifact { id: string; name: string; blob: Blob; mime: string; size: number }

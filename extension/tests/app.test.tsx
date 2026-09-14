@@ -7,12 +7,15 @@ import { cleanup } from '../src/browser'
 import { readAttachments } from '../src/documents'
 import { validateSettings } from '../src/provider'
 import { runAgent } from '../src/runner'
-import { loadSettings } from '../src/settings'
+import { loadSettings, saveSettings } from '../src/settings'
 import type { ProviderSettings, RunOptions } from '../src/types'
 
 vi.mock('../src/browser', () => ({ observe: vi.fn(), execute: vi.fn(), cleanup: vi.fn() }))
 vi.mock('../src/documents', () => ({ createArtifact: vi.fn(), downloadArtifact: vi.fn(), readAttachments: vi.fn() }))
-vi.mock('../src/provider', () => ({ validateSettings: vi.fn((value: ProviderSettings) => value) }))
+vi.mock('../src/provider', async importOriginal => ({
+  ...await importOriginal<typeof import('../src/provider')>(),
+  validateSettings: vi.fn((value: ProviderSettings) => value)
+}))
 vi.mock('../src/runner', () => ({ runAgent: vi.fn() }))
 vi.mock('../src/settings', async importOriginal => ({
   ...await importOriginal<typeof import('../src/settings')>(),
@@ -52,6 +55,16 @@ function button(text: string): HTMLButtonElement {
   return element
 }
 async function click(element: HTMLElement): Promise<void> { await act(async () => { element.click() }) }
+async function setInput(input: HTMLInputElement, value: string): Promise<void> {
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+}
+async function selectProvider(provider: ProviderSettings['provider']): Promise<void> {
+  const select = container.querySelector('select') as HTMLSelectElement
+  await act(async () => { select.value = provider; select.dispatchEvent(new Event('change', { bubbles: true })) })
+}
 async function enterTask(value = 'Read this approved page and summarize its public information.'): Promise<void> {
   const input = container.querySelector('.task-form textarea') as HTMLTextAreaElement
   expect(input).not.toBeNull()
@@ -103,6 +116,7 @@ beforeEach(async () => {
     storage: { onChanged: storageChanged }
   })
   vi.mocked(loadSettings).mockResolvedValue({ provider: 'groq', model: 'exact-test-model', apiKey: 'synthetic-test-key' })
+  vi.mocked(saveSettings).mockResolvedValue(undefined)
   vi.mocked(validateSettings).mockImplementation(value => value)
   vi.mocked(cleanup).mockResolvedValue(undefined)
   vi.mocked(readAttachments).mockResolvedValue([])
@@ -190,6 +204,68 @@ describe('task approval and native permission boundary', () => {
     expect(run).not.toHaveBeenCalled()
     expect(container.querySelector('[role="alert"]')?.textContent).toContain('[redacted]')
     expect(container.textContent).not.toContain('synthetic-test-key')
+  })
+})
+
+describe('direct Gemini settings and task integration', () => {
+  it('offers Google Gemini and clears the previous provider key and model when switching', async () => {
+    await click(button('Settings'))
+    const select = container.querySelector('select') as HTMLSelectElement
+    expect([...select.options].map(option => ({ label: option.textContent, value: option.value }))).toContainEqual({ label: 'Google Gemini', value: 'gemini' })
+    expect((container.querySelector('input[type="password"]') as HTMLInputElement).value).toBe('synthetic-test-key')
+    await selectProvider('gemini')
+    const model = container.querySelector('input:not([type="password"])') as HTMLInputElement
+    const key = container.querySelector('input[type="password"]') as HTMLInputElement
+    expect(model.value).toBe('')
+    expect(key.value).toBe('')
+    await setInput(model, 'gemini-test-model')
+    await setInput(key, 'synthetic-google-key')
+    await selectProvider('openrouter')
+    expect((container.querySelector('input:not([type="password"])') as HTMLInputElement).value).toBe('')
+    expect((container.querySelector('input[type="password"]') as HTMLInputElement).value).toBe('')
+    expect(run).not.toHaveBeenCalled()
+  })
+
+  it('saves Gemini settings and passes them to the same scoped browser agent', async () => {
+    await click(button('Settings'))
+    await selectProvider('gemini')
+    await setInput(container.querySelector('input:not([type="password"])') as HTMLInputElement, 'gemini-test-model')
+    await setInput(container.querySelector('input[type="password"]') as HTMLInputElement, 'synthetic-google-key')
+    await click(button('Save and open workspace'))
+    expect(saveSettings).toHaveBeenCalledExactlyOnceWith({ provider: 'gemini', model: 'gemini-test-model', apiKey: 'synthetic-google-key' })
+    await startTask()
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(run.mock.calls[0][0]).toMatchObject({
+      settings: { provider: 'gemini', model: 'gemini-test-model', apiKey: 'synthetic-google-key' },
+      scope: { tabId: 42, origins: ['https://example.com'], allowSubmit: false, allowSensitive: false, attachments: [] }
+    })
+    expect(permission).toHaveBeenCalledExactlyOnceWith({ origins: ['https://example.com/*'] })
+    expect(container.textContent).not.toContain('synthetic-google-key')
+  })
+
+  it('restores Gemini as the selected UI provider when loading a saved session', async () => {
+    await act(async () => { root.unmount() })
+    vi.mocked(loadSettings).mockResolvedValue({ provider: 'gemini', model: 'gemini-saved-model', apiKey: 'synthetic-google-session-key' })
+    root = createRoot(container)
+    await act(async () => { root.render(<App />) })
+    await click(button('Settings'))
+    expect((container.querySelector('select') as HTMLSelectElement).value).toBe('gemini')
+    expect((container.querySelector('input:not([type="password"])') as HTMLInputElement).value).toBe('gemini-saved-model')
+    expect((container.querySelector('input[type="password"]') as HTMLInputElement).value).toBe('synthetic-google-session-key')
+  })
+
+  it('aborts the old-provider run before adopting a Gemini session changed by another panel', async () => {
+    const captured = holdRunUntilAbort()
+    await startTask()
+    const credential = { provider: 'gemini' as const, model: 'gemini-saved-model', apiKey: 'synthetic-google-session-key' }
+    vi.mocked(loadSettings).mockResolvedValue(credential)
+    await act(async () => { storageChanged.emit({ credential: { newValue: credential } }, 'session') })
+    expect(captured.current!.signal.aborted).toBe(true)
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(button('Start task').disabled).toBe(true)
+    await click(button('Settings'))
+    expect((container.querySelector('select') as HTMLSelectElement).value).toBe('gemini')
+    expect((container.querySelector('input[type="password"]') as HTMLInputElement).value).toBe('synthetic-google-session-key')
   })
 })
 

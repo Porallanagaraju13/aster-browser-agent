@@ -1,4 +1,5 @@
 import type { ProviderSettings } from './types'
+import { PROVIDERS } from './provider'
 
 export const emptySettings: ProviderSettings = { provider: 'openrouter', model: '', apiKey: '' }
 export async function loadSettings(): Promise<ProviderSettings> {
@@ -6,11 +7,11 @@ export async function loadSettings(): Promise<ProviderSettings> {
   const saved = (local.providerSettings && typeof local.providerSettings === 'object' ? local.providerSettings : {}) as Record<string, unknown>
   const credential = session.credential as Partial<ProviderSettings> | undefined
   // Bind the key and destination atomically; never combine a key with separately loaded preferences.
-  if (credential && ['openrouter', 'groq'].includes(credential.provider || '') && typeof credential.apiKey === 'string' && typeof credential.model === 'string') {
+  if (credential && typeof credential.provider === 'string' && Object.hasOwn(PROVIDERS, credential.provider) && typeof credential.apiKey === 'string' && typeof credential.model === 'string') {
     return { provider: credential.provider!, model: credential.model.slice(0, 200), apiKey: credential.apiKey }
   }
   return {
-    provider: saved?.provider === 'groq' ? 'groq' : 'openrouter',
+    provider: typeof saved.provider === 'string' && Object.hasOwn(PROVIDERS, saved.provider) ? saved.provider as ProviderSettings['provider'] : 'openrouter',
     model: typeof saved?.model === 'string' ? saved.model.slice(0, 200) : '',
     apiKey: ''
   }

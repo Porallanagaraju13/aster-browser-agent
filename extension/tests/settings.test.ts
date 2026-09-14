@@ -63,6 +63,35 @@ describe('session-only provider settings', () => {
     mockStorage({ providerSettings: { provider: 'groq', model: 'stale-groq-model' } }, { credential: { provider: 'openrouter', model: 'saved-router-model', apiKey: 'router-session-key' } })
     expect(await loadSettings()).toEqual({ provider: 'openrouter', model: 'saved-router-model', apiKey: 'router-session-key' })
   })
+  it('restores a complete Gemini session credential without falling back to OpenRouter', async () => {
+    mockStorage({ providerSettings: { provider: 'openrouter', model: 'stale-router-model' } }, { credential: { provider: 'gemini', model: 'gemini-test-model', apiKey: 'synthetic-google-session-key' } })
+    expect(await loadSettings()).toEqual({ provider: 'gemini', model: 'gemini-test-model', apiKey: 'synthetic-google-session-key' })
+  })
+  it('preserves Gemini preferences without restoring a key after the session is cleared', async () => {
+    mockStorage({ providerSettings: { provider: 'gemini', model: 'gemini-test-model', apiKey: 'must-not-read-persistent-key' } })
+    expect(await loadSettings()).toEqual({ provider: 'gemini', model: 'gemini-test-model', apiKey: '' })
+  })
+  it('saves Gemini keys only in the atomic session credential and keeps the provider bound to the key', async () => {
+    const storage = mockStorage({ providerSettings: { provider: 'openrouter', model: 'old-model' } })
+    await saveSettings({ provider: 'gemini', model: 'gemini-test-model', apiKey: 'synthetic-google-session-key' })
+    expect(storage.session.set).toHaveBeenCalledWith({ credential: { provider: 'gemini', model: 'gemini-test-model', apiKey: 'synthetic-google-session-key' } })
+    expect(storage.local.values.providerSettings).toEqual({ provider: 'gemini', model: 'gemini-test-model' })
+    expect(JSON.stringify(storage.local.values)).not.toContain('synthetic-google-session-key')
+    expect(storage.sync.set).not.toHaveBeenCalled()
+    expect(await loadSettings()).toEqual({ provider: 'gemini', model: 'gemini-test-model', apiKey: 'synthetic-google-session-key' })
+  })
+  it('does not redirect a saved Gemini key to old provider preferences after a local write failure', async () => {
+    const storage = mockStorage({ providerSettings: { provider: 'openrouter', model: 'old-model' } })
+    storage.local.set.mockRejectedValueOnce(new Error('Local preferences unavailable'))
+    await expect(saveSettings({ provider: 'gemini', model: 'gemini-test-model', apiKey: 'synthetic-google-session-key' })).rejects.toThrow('Local preferences unavailable')
+    expect(await loadSettings()).toEqual({ provider: 'gemini', model: 'gemini-test-model', apiKey: 'synthetic-google-session-key' })
+  })
+  it('forgets a Gemini credential without changing the chosen provider or retaining its key', async () => {
+    const storage = mockStorage({ providerSettings: { provider: 'gemini', model: 'gemini-test-model' } }, { credential: { provider: 'gemini', model: 'gemini-test-model', apiKey: 'synthetic-google-session-key' } })
+    await forgetKey()
+    expect(storage.session.values).toEqual({})
+    expect(await loadSettings()).toEqual({ provider: 'gemini', model: 'gemini-test-model', apiKey: '' })
+  })
 
   it('never pairs an unbound or malformed session credential with persistent provider preferences', async () => {
     for (const credential of [undefined, null, 'key-string', {}, { apiKey: 'unbound-key' }, { provider: 'groq', apiKey: 'missing-model' }, { provider: 'other-provider', model: 'model-id', apiKey: 'key' }, { provider: 'groq', model: 'model-id', apiKey: 123 }]) {

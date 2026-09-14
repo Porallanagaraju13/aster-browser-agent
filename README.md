@@ -15,24 +15,26 @@ Bring your own AI provider. Take your results home as real files.
 ![Prototype](https://img.shields.io/badge/Status-Prototype-FBBF24?style=for-the-badge&labelColor=172126)
 
 [![Download Windows app](https://img.shields.io/badge/Download_Windows_App-0.12.1-A3E635?style=for-the-badge&logo=windows&logoColor=172126&labelColor=172126)](https://github.com/Porallanagaraju13/aster-browser-agent/releases/download/v0.12.1/Aster-Browser-Agent-0.12.1-Windows-x64.exe)
-[![Download Chrome extension](https://img.shields.io/badge/Chrome_Extension-0.1.0-38BDF8?style=for-the-badge&logo=googlechrome&logoColor=white&labelColor=172126)](https://github.com/Porallanagaraju13/aster-browser-agent/releases/tag/extension-v0.1.0)
+[![Download Chrome extension](https://img.shields.io/badge/Chrome_Extension-0.1.1-38BDF8?style=for-the-badge&logo=googlechrome&logoColor=white&labelColor=172126)](https://github.com/Porallanagaraju13/aster-browser-agent/releases/tag/extension-v0.1.1)
 
 [Release & downloads](https://github.com/Porallanagaraju13/aster-browser-agent/releases/tag/v0.12.1) · [Getting started](#-start-in-minutes) · [User guide](docs/USER_GUIDE.md) · [Development](#-for-developers)
 
 </div>
 
-> **Choose your edition.** The Windows `.exe` is in **Releases → v0.12.1 → Assets**. The standalone Chrome extension ZIP is in **Releases → extension-v0.1.0 → Assets**. This repository and its downloads are public. GitHub’s automatic source-code ZIP is for developers, not the packaged application.
+> **Choose your edition.** The Windows `.exe` is in **Releases → v0.12.1 → Assets**. The standalone Chrome extension ZIP is in **Releases → extension-v0.1.1 → Assets**. This repository and its downloads are public. GitHub’s automatic source-code ZIP is for developers, not the packaged application.
 
 ## 🧩 New: standalone Chrome extension
 
-Use Aster directly beside your current webpage — no desktop app, backend folder or `.env` file. Bring an **OpenRouter or Groq key and exact model ID**, review the task’s website access, watch visible actions, and download real Excel, Word, PDF and text files.
+Use Aster directly beside your current webpage — no desktop app, backend folder or `.env` file. Bring an **OpenRouter, Groq or Google Gemini API key and exact model ID**, review the task’s website access, watch visible actions, and download real Excel, Word, PDF and text files.
 
-**Install:** download the [extension ZIP](https://github.com/Porallanagaraju13/aster-browser-agent/releases/tag/extension-v0.1.0), extract it, open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the folder containing `manifest.json`. Click Aster’s toolbar icon on a website.
+**Install:** download the [extension ZIP](https://github.com/Porallanagaraju13/aster-browser-agent/releases/tag/extension-v0.1.1), extract it, open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the folder containing `manifest.json`. Click Aster’s toolbar icon on a website.
+
+**New in extension v0.1.1:** select **Google Gemini** to use a Google AI Studio API key directly — no OpenRouter key required. Gemini plans the same validated browser actions as the other providers; this is **not Gemini Native/computer-use mode**. Existing users should follow the [unpacked-extension upgrade steps](extension/README.md#upgrade-an-existing-unpacked-installation); re-enter the session-only key after reloading.
 
 | Desktop app | Browser extension beta |
 | --- | --- |
 | Windows portable EXE; separate isolated Chrome profile | Runs in desktop Chrome’s side panel and current signed-in tab |
-| OpenRouter, Groq and Gemini | OpenRouter and Groq |
+| OpenRouter, Groq and Gemini | OpenRouter, Groq and direct Google Gemini |
 | OS-encrypted persistent credentials | Session-only key; paste it again after restarting Chrome |
 | Multiple-tab tools and run recordings | Single active tab, visible DOM actions, no screenshot streaming |
 
@@ -126,7 +128,7 @@ npm ci
 npm run dev
 ```
 
-Cloning this private repository requires access. For normal use, download the release instead of building from source.
+This repository is public. For normal use, download the appropriate release instead of building from source.
 
 | Command | Purpose |
 | :--- | :--- |

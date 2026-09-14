@@ -3,7 +3,8 @@ import type { Action, Attachment, Observation, Provider, ProviderSettings, TaskS
 
 export const PROVIDERS: Record<Provider, { label: string; endpoint: string; origin: string }> = {
   openrouter: { label: 'OpenRouter', endpoint: 'https://openrouter.ai/api/v1/chat/completions', origin: 'https://openrouter.ai' },
-  groq: { label: 'Groq', endpoint: 'https://api.groq.com/openai/v1/chat/completions', origin: 'https://api.groq.com' }
+  groq: { label: 'Groq', endpoint: 'https://api.groq.com/openai/v1/chat/completions', origin: 'https://api.groq.com' },
+  gemini: { label: 'Google Gemini', endpoint: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', origin: 'https://generativelanguage.googleapis.com' }
 }
 
 const MAX_REPLY_BYTES = 256_000
@@ -33,8 +34,9 @@ export class ProviderError extends Error {
 
 /** Local validation only: saving settings never incurs a model request. */
 export function validateSettings(settings: ProviderSettings): ProviderSettings {
-  if (!settings || !Object.hasOwn(PROVIDERS, settings.provider)) throw new ProviderError('Choose OpenRouter or Groq.')
-  const model = typeof settings.model === 'string' ? settings.model.trim() : ''
+  if (!settings || !Object.hasOwn(PROVIDERS, settings.provider)) throw new ProviderError('Choose OpenRouter, Groq or Google Gemini.')
+  let model = typeof settings.model === 'string' ? settings.model.trim() : ''
+  if (settings.provider === 'gemini') model = model.replace(/^models\//, '')
   const apiKey = typeof settings.apiKey === 'string' ? settings.apiKey.trim() : ''
   if (!model || model.length > 200 || /[\s\x00-\x1f]/.test(model)) throw new ProviderError('Enter the exact model ID from your provider, without spaces.')
   if (apiKey.length < 8 || apiKey.length > 1024 || !/^[A-Za-z0-9._~-]+$/.test(apiKey)) throw new ProviderError('Enter a valid API key without spaces.')
@@ -72,6 +74,7 @@ export interface NextActionOptions {
 export function redactSecrets(text: string, apiKey: string): string {
   return (apiKey ? text.replaceAll(apiKey, '[API key hidden]') : text)
     .replace(/\b(?:sk-or-v1-|gsk_|sk-proj-)[A-Za-z0-9_-]{12,}/g, '[API key hidden]')
+    .replace(/\bAIza[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])/g, '[API key hidden]')
     .replace(/\bBearer\s+[A-Za-z0-9._~-]+/gi, 'Bearer [hidden]')
     .replace(/((?:password|passwd|api[_ -]?key|access[_ -]?token|secret)\s*[:=]\s*)[^\s,;"}]+/gi, '$1[hidden]')
 }
@@ -173,7 +176,8 @@ export async function nextAction(options: NextActionOptions): Promise<Action> {
       headers: { Authorization: `Bearer ${settings.apiKey}`, 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({
         model: settings.model, messages: buildMessages(options, settings.apiKey), stream: false,
-        ...(settings.provider === 'groq' ? { max_completion_tokens: 6000 } : { max_tokens: 6000 })
+        ...(settings.provider === 'groq' ? { max_completion_tokens: 6000 } : { max_tokens: 6000 }),
+        ...(settings.provider === 'gemini' ? { response_format: { type: 'json_object' } } : {})
       }),
       credentials: 'omit', redirect: 'error', cache: 'no-store', referrerPolicy: 'no-referrer', signal: controller.signal
     })
