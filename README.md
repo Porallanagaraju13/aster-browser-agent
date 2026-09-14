@@ -15,12 +15,30 @@ Bring your own AI provider. Take your results home as real files.
 ![Prototype](https://img.shields.io/badge/Status-Prototype-FBBF24?style=for-the-badge&labelColor=172126)
 
 [![Download Windows app](https://img.shields.io/badge/Download_Windows_App-0.12.1-A3E635?style=for-the-badge&logo=windows&logoColor=172126&labelColor=172126)](https://github.com/Porallanagaraju13/aster-browser-agent/releases/download/v0.12.1/Aster-Browser-Agent-0.12.1-Windows-x64.exe)
+[![Download Chrome extension](https://img.shields.io/badge/Chrome_Extension-0.1.0-38BDF8?style=for-the-badge&logo=googlechrome&logoColor=white&labelColor=172126)](https://github.com/Porallanagaraju13/aster-browser-agent/releases/tag/extension-v0.1.0)
 
 [Release & downloads](https://github.com/Porallanagaraju13/aster-browser-agent/releases/tag/v0.12.1) · [Getting started](#-start-in-minutes) · [User guide](docs/USER_GUIDE.md) · [Development](#-for-developers)
 
 </div>
 
-> **Download the application, not the source-code ZIP.** The Windows `.exe` is in **Releases → v0.12.1 → Assets**. This repository is private; you must sign in with an account that has repository access to download from GitHub. The owner can also share the portable EXE directly.
+> **Choose your edition.** The Windows `.exe` is in **Releases → v0.12.1 → Assets**. The standalone Chrome extension ZIP is in **Releases → extension-v0.1.0 → Assets**. This repository and its downloads are public. GitHub’s automatic source-code ZIP is for developers, not the packaged application.
+
+## 🧩 New: standalone Chrome extension
+
+Use Aster directly beside your current webpage — no desktop app, backend folder or `.env` file. Bring an **OpenRouter or Groq key and exact model ID**, review the task’s website access, watch visible actions, and download real Excel, Word, PDF and text files.
+
+**Install:** download the [extension ZIP](https://github.com/Porallanagaraju13/aster-browser-agent/releases/tag/extension-v0.1.0), extract it, open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the folder containing `manifest.json`. Click Aster’s toolbar icon on a website.
+
+| Desktop app | Browser extension beta |
+| --- | --- |
+| Windows portable EXE; separate isolated Chrome profile | Runs in desktop Chrome’s side panel and current signed-in tab |
+| OpenRouter, Groq and Gemini | OpenRouter and Groq |
+| OS-encrypted persistent credentials | Session-only key; paste it again after restarting Chrome |
+| Multiple-tab tools and run recordings | Single active tab, visible DOM actions, no screenshot streaming |
+
+[Extension setup and limitations](extension/README.md) · [Privacy](extension/PRIVACY.md) · [Public store submission checklist](extension/STORE_SUBMISSION.md)
+
+The GitHub extension release is a **beta unpacked download**, not an approved Chrome Web Store listing. The desktop documentation below still describes the Windows edition.
 
 ## ✨ Meet your browser workspace
 

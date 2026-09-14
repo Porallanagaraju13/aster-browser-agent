@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Aster — Browser Agent",
+  "version": "0.1.0",
+  "description": "Use your own AI key to work in the current tab, see browser actions, and create downloadable documents from a side panel.",
+  "minimum_chrome_version": "120",
+  "permissions": ["activeTab", "scripting", "storage", "sidePanel", "downloads"],
+  "host_permissions": ["https://openrouter.ai/*", "https://api.groq.com/*"],
+  "optional_host_permissions": ["https://*/*", "http://*/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_title": "Open Aster", "default_icon": "icons/aster.png" },
+  "icons": { "128": "icons/aster.png" },
+  "side_panel": { "default_path": "panel.html" },
+  "content_security_policy": { "extension_pages": "script-src 'self'; object-src 'none'; connect-src https://openrouter.ai https://api.groq.com; base-uri 'none'" }
+}

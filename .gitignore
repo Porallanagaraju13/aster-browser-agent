@@ -12,6 +12,8 @@ artifacts/
 .idea/
 .vscode/
 coverage/
+extension/dist/
+extension/test-artifacts/
 test-results/
 playwright-report/
 credentials.json

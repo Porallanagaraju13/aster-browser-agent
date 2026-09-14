@@ -2,7 +2,7 @@
 
 [← Back to Aster](../README.md) · [Download v0.12.1](https://github.com/Porallanagaraju13/aster-browser-agent/releases/tag/v0.12.1)
 
-This guide covers configuration, browser behavior, file handling, permissions, development, and packaging. For the ready-to-run Windows application, download the portable `.exe` from the release page, not GitHub's source-code ZIP. The repository is private: sign in with a GitHub account that has access to view the release and download its assets.
+This guide covers the Windows edition's configuration, browser behavior, file handling, permissions, development, and packaging. For the ready-to-run Windows application, download the portable `.exe` from the release page, not GitHub's source-code ZIP. The repository and release downloads are public. For the standalone Chrome edition, see [the extension guide](../extension/README.md).
 
 Aster is a local desktop browser agent modeled on the observable behavior of Google Antigravity's browser subagent. Give it an outcome and it opens a visible, isolated Chrome profile alongside an embedded verified preview, lets the connected AI model inspect a screenshot plus a semantic page map, executes one guarded browser action, captures evidence, and repeats until the outcome is verified.
 
