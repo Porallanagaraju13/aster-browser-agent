@@ -48,7 +48,8 @@ const FALLBACK_SETTINGS: AppSettings = {
 const PROVIDERS: Array<{ value: ModelProvider; label: string; model: string }> = [
   { value: 'google', label: 'Google Gemini', model: 'gemini-3.7-flash' },
   { value: 'openrouter', label: 'OpenRouter', model: 'google/gemini-3-flash-preview' },
-  { value: 'groq', label: 'Groq', model: 'qwen/qwen3.6-27b' }
+  { value: 'groq', label: 'Groq', model: 'qwen/qwen3.6-27b' },
+  { value: 'nvidia', label: 'NVIDIA NIM', model: '' }
 ]
 
 const EXAMPLES = [
@@ -130,7 +131,7 @@ function App() {
       window.browserAgent.getProviderCredential()
     ])
       .then(([saved, status]) => {
-        setSettings(status.configured
+        setSettings(status.source !== 'none'
           ? { ...saved, provider: status.provider, model: status.model }
           : saved
         )
@@ -151,7 +152,7 @@ function App() {
         setHasLiveFrame(true)
       }
       if (typeof event.metadata?.url === 'string') setCurrentUrl(event.metadata.url)
-      if (event.type === 'error') setError(event.detail || event.title)
+      if (event.type === 'error' || event.status === 'failed' || event.status === 'incomplete') setError(event.detail || event.title)
       if (event.metadata?.downloadable || ['completed', 'incomplete', 'stopped', 'failed'].includes(event.status ?? '')) refreshDownloads()
       if (['completed', 'incomplete', 'stopped', 'failed'].includes(event.status ?? '')) setApproval(null)
     })
@@ -199,6 +200,8 @@ function App() {
     return event?.title || 'Waiting for a task'
   }, [events])
 
+  const latestProgress = useMemo(() => [...events].reverse().find((item) => item.type === 'status'), [events])
+
   const updateSettings = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
     setSettings((current) => ({ ...current, [key]: value }))
   }
@@ -215,7 +218,7 @@ function App() {
       setCredentialError('Enter the exact model ID supplied by your provider.')
       return
     }
-    const needsKey = !credential?.configured || credential.provider !== settings.provider
+    const needsKey = !credential || credential.source === 'none' || credential.provider !== settings.provider
     if (needsKey && !apiKey.trim()) {
       setCredentialError(`Paste a ${providerLabel(settings.provider)} API key.`)
       return
@@ -408,7 +411,7 @@ function App() {
           </div>
           <span className="section-label"><KeyRound size={14} /> First-run connection</span>
           <h1 id="provider-setup-title">Connect your AI provider</h1>
-          <p>Your key is encrypted with the operating system and is never included in browser artifacts.</p>
+          <p>Your key is encrypted with the operating system and is never included in browser artifacts. Validation checks provider/model metadata; the first approved task tests actual inference and account access.</p>
 
           <div className="provider-form">
             <label>
@@ -443,6 +446,7 @@ function App() {
                 onChange={(event) => updateSettings('model', event.target.value)}
                 maxLength={160}
                 spellCheck={false}
+                placeholder={`Paste an exact ${providerLabel(settings.provider)} model ID`}
               />
               <small>Tool calling is required. Text-only models use page text and controls; compatible vision models can also see screenshots.</small>
             </label>
@@ -457,7 +461,8 @@ function App() {
             {credentialBusy ? <LoaderCircle className="spin" size={16} /> : <KeyRound size={16} />}
             {credentialBusy ? 'Validating…' : 'Validate and continue'}
           </button>
-          <small className="provider-note">Supported directly: Google Gemini, OpenRouter, and Groq.</small>
+          {settings.provider === 'nvidia' && <small className="provider-note">Use a hosted NVIDIA API Catalog key and the exact tool-capable model ID from build.nvidia.com. Its public model catalog cannot verify your key; the first task checks access. No NVIDIA GPU is needed on your computer.</small>}
+          <small className="provider-note">Supported directly: Google Gemini, OpenRouter, Groq, and NVIDIA NIM.</small>
         </section>
       </main>
     )
@@ -610,7 +615,7 @@ function App() {
                 />
                 <small>
                   {credential?.configured
-                    ? `${providerLabel(credential.provider)} connected from ${credential.source === 'stored' ? 'encrypted local storage' : 'an environment variable'}.`
+                    ? `${providerLabel(credential.provider)} configured from ${credential.source === 'stored' ? 'encrypted local storage' : 'an environment variable'}. Actual inference is checked when the task runs.`
                     : 'No provider key is connected.'
                   }
                 </small>
@@ -621,10 +626,12 @@ function App() {
                   value={settings.model}
                   maxLength={160}
                   spellCheck={false}
+                  placeholder={`Paste an exact ${providerLabel(settings.provider)} model ID`}
                   onChange={(event) => updateSettings('model', event.target.value)}
                   disabled={running || credentialBusy}
                 />
                 <small>Tool calling is required. {credential?.supportsImages ? 'Screenshot input is enabled.' : 'Page text and controls are used without images.'}</small>
+                {settings.provider === 'nvidia' && <small>Paste the NVIDIA-hosted model ID exactly. A model available through OpenRouter may use a different ID here.</small>}
               </label>
               {credentialError && <div className="setup-error compact" role="alert"><AlertTriangle size={13} /> {credentialError}</div>}
               <div className="provider-actions">
@@ -678,6 +685,7 @@ function App() {
                 <span /> {running && hasLiveFrame ? 'VERIFIED VIEW' : 'PREVIEW'}
               </div>
             </div>
+            {running && currentUrl === 'about:blank' && <div className="planning-notice" role="status"><LoaderCircle className="spin" size={15} /><div><strong>{latestProgress?.title || 'Preparing the approved task'}</strong><p>{latestProgress?.detail || 'Chrome starts before the model chooses a website. Watch Activity for the request status, or press Stop to cancel.'}</p></div></div>}
             <div className="viewport">
               {latestScreenshot ? (
                 <img ref={liveImageRef} src={latestScreenshot} alt="Latest browser-agent screenshot" />

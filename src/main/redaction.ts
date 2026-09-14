@@ -4,6 +4,7 @@ const TASK_VALUE_PATTERN = /\b(?:password|passcode|pwd|pin|otp|api[\s_-]?key|acc
 const SECRET_LABEL_PATTERN = /(\b(?:password|passcode|pwd|pin|otp|api[\s_-]?key|access[\s_-]?token|bearer[\s_-]?token|secret|mobile\s+or\s+zid|zid|login\s+id|username|user\s+id)\b["']?\s*(?::|=|\bis\b)\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi
 const URL_SECRET_PATTERN = /([?&](?:password|pwd|token|api[_-]?key|access[_-]?token)=)[^&#\s]+/gi
 const BEARER_PATTERN = /(authorization\s*:\s*bearer\s+)[^\s,;]+/gi
+const PROVIDER_KEY_PATTERN = /\b(?:nvapi-|sk-or-v1-|gsk_|sk-proj-)[A-Za-z0-9_-]{8,}|\bAIza[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])/g
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -25,6 +26,7 @@ export function redactSensitiveText(
   if (value === undefined) return undefined
 
   let redacted = value
+    .replace(PROVIDER_KEY_PATTERN, '[REDACTED]')
     .replace(SECRET_LABEL_PATTERN, '$1[REDACTED]')
     .replace(URL_SECRET_PATTERN, '$1[REDACTED]')
     .replace(BEARER_PATTERN, '$1[REDACTED]')

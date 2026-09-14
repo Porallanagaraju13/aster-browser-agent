@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { OpenAICompatiblePlanner } from '../src/main/planner'
 import type { PageObservation } from '../src/shared/types'
 
@@ -12,6 +12,8 @@ const observation: PageObservation = {
   tabs: [{ id: 't1', title: 'Example Domain', url: 'https://example.com/', active: true }],
   activeTabId: 't1'
 }
+
+afterEach(() => vi.restoreAllMocks())
 
 function toolResponse(name = 'inspect_page', args = '{}', finishReason = 'tool_calls'): Response {
   return new Response(JSON.stringify({
@@ -69,7 +71,7 @@ describe('OpenAICompatiblePlanner', () => {
     let requestedUrl = ''
     const request = vi.fn(async (input: string | URL | Request) => {
       requestedUrl = String(input)
-      return new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'Done' } }] }))
+      return toolResponse()
     })
     const planner = new OpenAICompatiblePlanner({
       provider: 'groq', model: 'qwen/qwen3.6-27b', apiKey: 'secret'
@@ -97,7 +99,7 @@ describe('OpenAICompatiblePlanner', () => {
     const content = 'Verified report paragraph. '.repeat(600)
     const planner = new OpenAICompatiblePlanner({ provider: 'openrouter', model: 'model', apiKey: 'secret' }, async (_url, init) => {
       bodies.push(String(init?.body))
-      limits.push(JSON.parse(String(init?.body)).max_completion_tokens)
+      limits.push(JSON.parse(String(init?.body)).max_tokens)
       return limits.length === 1
         ? toolResponse('save_file', '{"filename":"report.docx","content":"cut', 'length')
         : toolResponse('save_file', JSON.stringify({ filename: 'report.docx', format: 'docx', content }))
@@ -194,5 +196,133 @@ describe('OpenAICompatiblePlanner', () => {
     for (let index = 0; index < last.messages.length; index += 1) {
       if (last.messages[index].role === 'tool') expect(last.messages[index - 1].role).toBe('assistant')
     }
+  })
+
+  it.each([
+    ['openrouter', 'https://openrouter.ai/api/v1/chat/completions', 'max_tokens', 8192],
+    ['groq', 'https://api.groq.com/openai/v1/chat/completions', 'max_completion_tokens', 8192],
+    ['nvidia', 'https://integrate.api.nvidia.com/v1/chat/completions', 'max_tokens', 2048]
+  ] as const)('uses the documented %s request parameters and fixed endpoint', async (provider, endpoint, limitKey, limit) => {
+    const request = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => toolResponse())
+    const planner = new OpenAICompatiblePlanner({ provider, model: 'vendor/exact-model:version', apiKey: 'fixture-provider-key' }, request)
+    await planner.begin('Inspect the page.', observation)
+    expect(request).toHaveBeenCalledTimes(1)
+    const [url, init] = request.mock.calls[0]
+    expect(url).toBe(endpoint)
+    expect(init).toMatchObject({ credentials: 'omit', redirect: 'error', cache: 'no-store', method: 'POST' })
+    expect(init?.headers).toMatchObject({ Authorization: 'Bearer fixture-provider-key' })
+    const body = JSON.parse(String(init?.body))
+    expect(body).toMatchObject({ model: 'vendor/exact-model:version', [limitKey]: limit, tool_choice: 'auto', stream: false })
+    expect(body).not.toHaveProperty(limitKey === 'max_tokens' ? 'max_completion_tokens' : 'max_tokens')
+    expect(body.tools.length).toBeGreaterThan(5)
+    if (provider === 'nvidia') {
+      expect(body).not.toHaveProperty('parallel_tool_calls')
+      expect(body.messages.map((message: { role: string }) => message.role)).toEqual(['system', 'user'])
+      expect(typeof body.messages[1].content).toBe('string')
+      expect(body.messages[1].content).toContain('USER TASK:')
+      expect(body.messages[1].content).toContain('CURRENT BROWSER OBSERVATION:')
+    }
+  })
+
+  it('caps NVIDIA output recovery at 4096 tokens without retrying an unchanged limit', async () => {
+    const limits: number[] = []
+    const planner = new OpenAICompatiblePlanner({ provider: 'nvidia', model: 'vendor/chat-model', apiKey: 'fixture-key' }, async (_url, init) => {
+      limits.push(JSON.parse(String(init?.body)).max_tokens)
+      return toolResponse('save_file', '{"content":"cut', 'length')
+    })
+    await expect(planner.begin('Create a report.', observation)).rejects.toThrow('No partial file or browser action')
+    expect(limits).toEqual([2048, 4096])
+  })
+
+  it.each([400, 401, 402, 403, 404, 422])('fails safely on HTTP %s without repeating an unchanged rejected request', async (status) => {
+    const key = 'nvapi-synthetic-provider-key'
+    const request = vi.fn(async () => new Response(JSON.stringify({ error: { message: { secret: key, userTask: 'PRIVATE TASK' } } }), { status }))
+    const progress = vi.fn()
+    const planner = new OpenAICompatiblePlanner({ provider: 'nvidia', model: 'private-model', apiKey: key, onProgress: progress }, request)
+    const error = await planner.begin('PRIVATE TASK', observation).catch((caught: Error) => caught)
+    expect(error).toBeInstanceOf(Error)
+    expect(String(error)).toContain('NVIDIA NIM')
+    expect(String(error)).not.toMatch(/synthetic-provider-key|PRIVATE TASK|replaceAll|TypeError/)
+    expect(JSON.stringify(progress.mock.calls)).not.toMatch(/synthetic-provider-key|PRIVATE TASK|private-model/)
+    expect(request).toHaveBeenCalledTimes(1)
+  })
+
+  it('handles a provider error envelope with HTTP 200 without leaking its message', async () => {
+    const request = vi.fn(async () => new Response(JSON.stringify({ error: { code: 429, message: 'private payload nvapi-secret-123456789' } })))
+    const planner = new OpenAICompatiblePlanner({ provider: 'openrouter', model: 'vendor/model', apiKey: 'key' }, request)
+    const error = await planner.begin('Inspect.', observation).catch((caught: Error) => caught)
+    expect(String(error)).toContain('rate limit or account quota')
+    expect(String(error)).not.toContain('private payload')
+    expect(request).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    { role: 'assistant', content: 'I completed the task.' },
+    { role: 'assistant', content: null, tool_calls: [] },
+    { role: 'assistant' }
+  ])('rejects no-action assistant responses without claiming completion', async (message) => {
+    const request = vi.fn(async () => new Response(JSON.stringify({ choices: [{ message }] })))
+    const planner = new OpenAICompatiblePlanner({ provider: 'groq', model: 'model', apiKey: 'key' }, request)
+    await expect(planner.begin('Inspect.', observation)).rejects.toThrow('instead of a browser action')
+    expect(request).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects oversized streamed responses before parsing them or dispatching actions', async () => {
+    const request = vi.fn(async () => new Response('x'.repeat(2 * 1024 * 1024 + 1)))
+    const planner = new OpenAICompatiblePlanner({ provider: 'nvidia', model: 'model', apiKey: 'key' }, request)
+    await expect(planner.begin('Inspect.', observation)).rejects.toThrow('safe size limit')
+    expect(request).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects asynchronous queued responses rather than waiting on a blank browser', async () => {
+    const request = vi.fn(async () => new Response('{}', { status: 202 }))
+    const planner = new OpenAICompatiblePlanner({ provider: 'nvidia', model: 'model', apiKey: 'key' }, request)
+    await expect(planner.begin('Inspect.', observation)).rejects.toThrow('queued the request')
+    expect(request).toHaveBeenCalledTimes(1)
+  })
+
+  it('stops a timed-out request and reports a safe actionable error without automatic retry', async () => {
+    const timeout = new AbortController()
+    vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timeout.signal)
+    const request = vi.fn(async (_url: string | URL | Request, init?: RequestInit): Promise<Response> => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true })
+    }))
+    const progress = vi.fn()
+    const planner = new OpenAICompatiblePlanner({ provider: 'nvidia', model: 'model', apiKey: 'key', onProgress: progress }, request)
+    const pending = planner.begin('Inspect.', observation)
+    timeout.abort(new DOMException('Timeout', 'TimeoutError'))
+    await expect(pending).rejects.toThrow('within 90 seconds')
+    expect(request).toHaveBeenCalledTimes(1)
+    expect(progress.mock.calls.flat().join(' ')).toContain('timed out')
+  })
+
+  it('never calls the provider when already stopped', async () => {
+    const abort = new AbortController()
+    abort.abort(new Error('Stopped'))
+    const request = vi.fn(async () => toolResponse())
+    const planner = new OpenAICompatiblePlanner({ provider: 'nvidia', model: 'model', apiKey: 'key', signal: abort.signal }, request)
+    await expect(planner.begin('Inspect.', observation)).rejects.toThrow('Stopped')
+    expect(request).not.toHaveBeenCalled()
+  })
+
+  it('blocks model actions containing the configured API key before any dispatch or retry', async () => {
+    const key = 'nvapi-synthetic-test-key-123'
+    const request = vi.fn(async () => toolResponse('type_text', JSON.stringify({ ref: 'e1', text: key })))
+    const planner = new OpenAICompatiblePlanner({ provider: 'nvidia', model: 'model', apiKey: key }, request)
+    await expect(planner.begin('Inspect.', observation)).rejects.toThrow('blocked before any browser or file action')
+    expect(request).toHaveBeenCalledTimes(1)
+  })
+
+  it('redacts the configured key from model context and visible response text', async () => {
+    const key = 'nvapi-synthetic-test-key-123'
+    const request = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => new Response(JSON.stringify({ choices: [{ message: {
+      content: `Inspecting with ${key}`,
+      tool_calls: [{ id: 'call-1', type: 'function', function: { name: 'inspect_page', arguments: '{}' } }]
+    } }] })))
+    const planner = new OpenAICompatiblePlanner({ provider: 'nvidia', model: 'model', apiKey: key, onProgress: () => { throw new Error('UI failed') } }, request)
+    const result = await planner.begin(`Inspect without exposing ${key}.`, { ...observation, text: `Untrusted text ${key}` })
+    expect(String(request.mock.calls[0][1]?.body)).not.toContain(key)
+    expect(result.message).not.toContain(key)
+    expect(result.actions[0].name).toBe('inspect_page')
   })
 })

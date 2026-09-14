@@ -1,6 +1,6 @@
 {
   "name": "antigravity-browser-agent",
-  "version": "0.12.1",
+  "version": "0.12.2",
   "private": true,
   "author": "Aster Project",
   "description": "A local, task-approved browser agent inspired by Google Antigravity's browser subagent.",
@@ -15,9 +15,10 @@
     "extension:test": "npm --prefix extension test",
     "extension:package": "npm --prefix extension run package",
     "test:e2e": "npm run build && node scripts/e2e-onboarding.mjs && node scripts/e2e-production.mjs && node scripts/e2e-documents.mjs",
+    "test:e2e:providers": "npm run build && node scripts/e2e-provider-browser.mjs",
     "test:e2e:documents": "npm run build && node scripts/e2e-documents.mjs",
     "test:e2e:file": "npm run build && node scripts/e2e-file-agent.mjs",
-    "package:win": "npm run build && electron-builder --win",
+    "package:win": "npm run build && node scripts/package-windows.cjs",
     "test:portable": "node scripts/smoke-portable.mjs"
   },
   "dependencies": {

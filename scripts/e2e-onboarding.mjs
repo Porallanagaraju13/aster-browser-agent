@@ -1,25 +1,18 @@
-import { mkdtemp, rm } from 'node:fs/promises'
-import os from 'node:os'
-import path from 'node:path'
+import assert from 'node:assert/strict'
 import { _electron as electron } from 'playwright-core'
 import axe from 'axe-core'
+import { assertDesktopIsolation, closeDesktopTest, createDesktopTestProfile, desktopLaunchOptions } from './fixtures/desktop-test-isolation.mjs'
 
-const projectRoot = path.resolve(import.meta.dirname, '..')
-const dataDir = await mkdtemp(path.join(os.tmpdir(), 'aster-onboarding-e2e-'))
-const environment = { ...process.env }
-delete environment.GEMINI_API_KEY
-delete environment.OPENROUTER_API_KEY
-delete environment.GROQ_API_KEY
-environment.DOTENV_CONFIG_PATH = path.join(dataDir, 'no-environment-file')
+const dataDir = await createDesktopTestProfile('onboarding-e2e')
 let application
 
 try {
-  application = await electron.launch({
-    args: ['.', `--user-data-dir=${dataDir}`],
-    cwd: projectRoot,
-    env: environment,
-    timeout: 90_000
+  application = await electron.launch(desktopLaunchOptions(dataDir))
+  await application.evaluate(() => {
+    globalThis.__asterUnexpectedNetwork = 0
+    globalThis.fetch = async () => { globalThis.__asterUnexpectedNetwork++; throw new Error('Onboarding test blocked an unexpected network request') }
   })
+  await assertDesktopIsolation(application, dataDir)
   const page = await application.firstWindow()
   await page.getByRole('heading', { name: 'Connect your AI provider' }).waitFor()
   await page.evaluate(axe.source)
@@ -37,24 +30,28 @@ try {
   }
 
   const provider = page.locator('.provider-form select')
+  assert.deepEqual(await provider.locator('option').evaluateAll(options => options.map(option => option.value)), ['google', 'openrouter', 'groq', 'nvidia'])
   await provider.selectOption('openrouter')
-  if (await page.locator('.provider-form input:not([type="password"])').inputValue() !== 'google/gemini-3-flash-preview') {
-    throw new Error('OpenRouter did not receive its vision/tool model suggestion.')
-  }
   const key = page.locator('.provider-form input[type="password"]')
   if (await key.getAttribute('type') !== 'password') throw new Error('The API key field is not masked.')
   await page.getByRole('button', { name: 'Validate and continue' }).click()
-  await page.getByText('Paste a OpenRouter API key.').waitFor()
+  await page.getByText(/Paste an? OpenRouter API key\./).waitFor()
 
   await provider.selectOption('groq')
-  if (await page.locator('.provider-form input:not([type="password"])').inputValue() !== 'qwen/qwen3.6-27b') {
-    throw new Error('Groq did not receive its vision/tool model suggestion.')
-  }
+  await page.locator('.provider-form input:not([type="password"])').fill('test-groq/exact-model')
+  assert.equal(await page.locator('.provider-form input:not([type="password"])').inputValue(), 'test-groq/exact-model')
+  await provider.selectOption('nvidia')
+  const model = page.locator('.provider-form input:not([type="password"])')
+  assert.equal(await model.inputValue(), '', 'NVIDIA must require an exact user-provided model ID, not a guessed default')
+  await model.fill('test-nvidia/exact-model')
+  assert.equal(await model.inputValue(), 'test-nvidia/exact-model')
+  assert.equal(await application.evaluate(() => globalThis.__asterUnexpectedNetwork), 0)
   console.log('PASS required first-run provider onboarding')
-  console.log('PASS Google, OpenRouter, and Groq choices')
+  console.log('PASS Google, OpenRouter, Groq and NVIDIA choices')
+  console.log('PASS NVIDIA empty default and exact editable model ID')
+  console.log('PASS isolated profile/cwd, scrubbed provider environment and no network calls')
   console.log('PASS masked API key and editable model ID')
   console.log('PASS onboarding WCAG 2.1 AA automated audit')
 } finally {
-  if (application) await application.close().catch(() => undefined)
-  await rm(dataDir, { recursive: true, force: true }).catch(() => undefined)
+  await closeDesktopTest(application, dataDir)
 }

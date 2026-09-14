@@ -1,6 +1,6 @@
 # Aster · User & Developer Guide
 
-[← Back to Aster](../README.md) · [Download v0.12.1](https://github.com/Porallanagaraju13/aster-browser-agent/releases/tag/v0.12.1)
+[← Back to Aster](../README.md) · [Download v0.12.2](https://github.com/Porallanagaraju13/aster-browser-agent/releases/tag/v0.12.2)
 
 This guide covers the Windows edition's configuration, browser behavior, file handling, permissions, development, and packaging. For the ready-to-run Windows application, download the portable `.exe` from the release page, not GitHub's source-code ZIP. The repository and release downloads are public. For the standalone Chrome edition, see [the extension guide](../extension/README.md).
 
@@ -10,9 +10,9 @@ It is an independent project—not a Google product and not affiliated with Anti
 
 ## Implemented capabilities
 
-- First-run provider setup for Google Gemini, OpenRouter, or Groq, with a user-entered API key and model ID.
-- API keys encrypted locally with Electron `safeStorage` (Windows DPAPI on the Windows build); plaintext keys are never written to settings or artifacts.
-- Google uses its native Interactions API. OpenRouter and Groq use their documented OpenAI-compatible multimodal tool-calling APIs.
+- First-run provider setup for Google Gemini, OpenRouter, Groq, or NVIDIA NIM, with a user-entered API key and model ID.
+- API keys encrypted locally with Electron `safeStorage` (Windows DPAPI on the Windows build), kept out of plaintext settings and redacted from event logs. Screenshots, recordings and website outputs can still contain visible secrets; treat artifacts as private.
+- Google uses its native Interactions API. OpenRouter, Groq and NVIDIA use their hosted OpenAI-compatible tool-calling APIs. NVIDIA defaults to text/controls unless image support is explicitly verified in its catalog.
 - Tool loop: every action returns fresh page state; verified vision models also receive screenshots. Text-only tool models use DOM observations.
 - Direct Chrome control through Playwright/CDP; no extension is required.
 - Stable browser preview updated only from verified observations, without continuous or cursor-time screenshot capture that can flash the visible Chrome surface.
@@ -68,14 +68,14 @@ For the portable Windows application:
 - Windows x64
 - Google Chrome, or `CHROME_PATH` pointing to a compatible Chromium executable
 - Internet access
-- An API key for Google Gemini, OpenRouter, or Groq
-- A model ID that supports function/tool calling; image input is optional for OpenRouter/Groq
+- An API key for Google Gemini, OpenRouter, Groq, or NVIDIA NIM
+- A model ID that supports function/tool calling; image input is optional for OpenAI-compatible providers
 
 No backend files, Node.js installation, Python installation, or `.env` file are needed to run the portable application. Each recipient enters their own provider key and model on first launch.
 
 For source development, also install Node.js 20 or newer and run `npm ci`. The portable smoke-test script requires Node.js 22 or newer. Build Windows x64 releases on Windows; packaging downloads the recording runtime using the lockfile-installed Playwright CLI.
 
-Enter the exact model ID listed by your chosen provider for your account. The model must support function/tool calling; image input is optional for OpenRouter/Groq. Model availability and pricing belong to the provider and can change. Aster validates the key and model before saving them; a key from one provider cannot be used with another provider's endpoint.
+Enter the exact model ID listed by your chosen provider for your account. The model must support function/tool calling; image input is optional for OpenAI-compatible providers. Model availability and pricing belong to the provider and can change. Aster checks provider/model metadata before saving credentials; this is not a paid inference test or a guarantee of current quota, credits or tool behavior. A key from one provider cannot be used with another provider's endpoint.
 
 ## Run it
 
@@ -86,9 +86,17 @@ npm ci
 npm run dev
 ```
 
-On first launch, choose **Google Gemini**, **OpenRouter**, or **Groq**, paste the provider's API key, enter the exact model ID, and select **Validate and continue**. Aster encrypts the key with the operating system and never returns it to the renderer after storage. Provider, model, and key can be replaced later in Settings.
+On first launch, choose **Google Gemini**, **OpenRouter**, **Groq**, or **NVIDIA NIM**, paste the provider's API key, enter the exact model ID, and select **Validate and continue**. Aster encrypts the key with the operating system and never returns it to the renderer after storage. Provider, model, and key can be replaced later in Settings.
 
-For development automation, `GEMINI_API_KEY`/`GEMINI_MODEL`, `OPENROUTER_API_KEY`/`OPENROUTER_MODEL`, and `GROQ_API_KEY`/`GROQ_MODEL` are also supported. Environment keys are not copied into project settings unless the user explicitly validates and saves that provider from the UI.
+For development automation, `GEMINI_API_KEY`/`GEMINI_MODEL`, `OPENROUTER_API_KEY`/`OPENROUTER_MODEL`, `GROQ_API_KEY`/`GROQ_MODEL`, and `NVIDIA_API_KEY`/`NVIDIA_MODEL` are also supported. NVIDIA requires an explicit model ID. Environment keys are not copied into project settings unless the user explicitly validates and saves that provider from the UI.
+
+## Provider setup and startup troubleshooting
+
+For direct NVIDIA, create your own hosted API key at [NVIDIA's API Catalog](https://build.nvidia.com/), choose **NVIDIA NIM** in Aster and paste an exact tool-capable model ID from that catalog. No local NVIDIA GPU or NIM container is needed. A model routed through OpenRouter can have a different ID from the same model hosted by NVIDIA. The key goes only to the selected provider's fixed endpoint. NVIDIA's model catalog is public: passing catalog validation confirms the model ID, **not** that your key works. The first approved task checks inference access and displays an authentication error if the provider rejects the key. Review [NVIDIA's API documentation](https://docs.api.nvidia.com/nim/reference/llm-apis), [terms](https://developer.nvidia.com/terms-of-use) and [privacy policy](https://www.nvidia.com/en-us/about-nvidia/privacy-policy/) before sharing task/page data. No free-tier availability or zero-retention promise is made.
+
+The desktop app launches its separate, isolated Chrome window **before** asking the model for its first action. A slow, queued, failed or non-tool model response can therefore leave the browser at `about:blank`; this does not by itself mean Chrome or the internet is broken. Version 0.12.2 displays a static local waiting page and request progress instead of an unexplained white page. The waiting page contains no task text or credentials. The browser navigates only after the model returns an allowed navigation action.
+
+If there are no actions, check **Activity** and the visible error banner. Authentication, unavailable models, quota/credits, unsupported requests and missing tool calls require different remedies. Verify provider and exact model, narrow the task, or choose a model with documented tool calling. Use **Stop** to cancel; this cannot undo actions already sent. Do not remove task-approval checks or disable browser security to troubleshoot an API problem. A separate Chrome window is expected for the desktop edition; the Chrome extension instead controls the selected tab.
 
 Login identifiers, passwords, tokens, and other credentials written in a task remain available to the browser agent for that approved run, but their values are redacted from the event timeline, `events.jsonl`, and `summary.md`. Page screenshots and recordings can still show whatever the website itself renders, so treat run artifacts as private.
 
@@ -117,6 +125,7 @@ npm run dev          # Launch the desktop app
 npm run typecheck    # Check main, preload, renderer, and tests
 npm test             # Run policy and real-Chrome integration tests
 npm run test:e2e     # Build and run the production Electron/accessibility journey
+npm run test:e2e:providers # Mock AI matrix with real browser actions for OpenRouter/Groq/NVIDIA
 npm run test:e2e:file # Run a live Gemini request that must create a Word artifact
 npm run test:e2e:documents # Test attachments, Unicode PDF, Save as and persistent downloads without paid model calls
 npm run build        # Create production bundles in out/
@@ -152,7 +161,7 @@ This is a guarded agent, not a perfect sandbox. Action classification relies on 
 
 ## Production validation
 
-Before packaging a release, run `npm test`, `npm run test:e2e`, and `npm audit`. The Electron journeys verify first-run provider onboarding, Google/OpenRouter/Groq choices, masked credentials, automatic visible-browser operation, the task approval lifecycle, stable verified previews, downloadable-artifact controls, renderer error monitoring, keyboard behavior, and automated WCAG 2.1 AA checks.
+Before packaging a release, run `npm test`, `npm run test:e2e`, `npm run test:e2e:providers`, and `npm audit`. The Electron journeys verify first-run provider onboarding, Google/OpenRouter/Groq/NVIDIA choices, masked credentials, automatic visible-browser operation, the task approval lifecycle, stable verified previews, downloadable-artifact controls, renderer error monitoring, keyboard behavior, and automated WCAG 2.1 AA checks. Run suites sequentially on resource-constrained machines.
 
 Downloads are isolated to each run's artifact folder. The Downloads view lists at most 500 recent files from the newest 100 runs; older files remain on disk. The dedicated browser profile persists cookies between runs, and screenshots/recordings may contain sensitive page content.
 
@@ -168,3 +177,4 @@ Deterministic tests cover cancellation races, missing outputs, multiple-file upl
 - [OpenRouter image inputs](https://openrouter.ai/docs/guides/overview/multimodal/image-understanding)
 - [Groq API reference](https://console.groq.com/docs/api-reference)
 - [Groq vision and tool use](https://console.groq.com/docs/vision)
+- [NVIDIA hosted LLM APIs](https://docs.api.nvidia.com/nim/reference/llm-apis)

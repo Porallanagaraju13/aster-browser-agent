@@ -9,19 +9,19 @@
 Describe a task, approve its limits, and watch Aster work in Chrome.<br />
 Bring your own AI provider. Take your results home as real files.
 
-![Version](https://img.shields.io/badge/version-0.12.1-A3E635?style=for-the-badge&labelColor=172126)
+![Version](https://img.shields.io/badge/version-0.12.2-A3E635?style=for-the-badge&labelColor=172126)
 ![Windows x64](https://img.shields.io/badge/Windows-x64-38BDF8?style=for-the-badge&labelColor=172126)
 ![Portable](https://img.shields.io/badge/Desktop-Portable-A78BFA?style=for-the-badge&labelColor=172126)
 ![Prototype](https://img.shields.io/badge/Status-Prototype-FBBF24?style=for-the-badge&labelColor=172126)
 
-[![Download Windows app](https://img.shields.io/badge/Download_Windows_App-0.12.1-A3E635?style=for-the-badge&logo=windows&logoColor=172126&labelColor=172126)](https://github.com/Porallanagaraju13/aster-browser-agent/releases/download/v0.12.1/Aster-Browser-Agent-0.12.1-Windows-x64.exe)
+[![Download Windows app](https://img.shields.io/badge/Download_Windows_App-0.12.2-A3E635?style=for-the-badge&logo=windows&logoColor=172126&labelColor=172126)](https://github.com/Porallanagaraju13/aster-browser-agent/releases/download/v0.12.2/Aster-Browser-Agent-0.12.2-Windows-x64.exe)
 [![Download Chrome extension](https://img.shields.io/badge/Chrome_Extension-0.1.1-38BDF8?style=for-the-badge&logo=googlechrome&logoColor=white&labelColor=172126)](https://github.com/Porallanagaraju13/aster-browser-agent/releases/tag/extension-v0.1.1)
 
-[Release & downloads](https://github.com/Porallanagaraju13/aster-browser-agent/releases/tag/v0.12.1) · [Getting started](#-start-in-minutes) · [User guide](docs/USER_GUIDE.md) · [Development](#-for-developers)
+[Release & downloads](https://github.com/Porallanagaraju13/aster-browser-agent/releases/tag/v0.12.2) · [Getting started](#-start-in-minutes) · [User guide](docs/USER_GUIDE.md) · [Development](#-for-developers)
 
 </div>
 
-> **Choose your edition.** The Windows `.exe` is in **Releases → v0.12.1 → Assets**. The standalone Chrome extension ZIP is in **Releases → extension-v0.1.1 → Assets**. This repository and its downloads are public. GitHub’s automatic source-code ZIP is for developers, not the packaged application.
+> **Choose your edition.** The Windows `.exe` is in **Releases → v0.12.2 → Assets**. The standalone Chrome extension ZIP is in **Releases → extension-v0.1.1 → Assets**. This repository and its downloads are public. GitHub’s automatic source-code ZIP is for developers, not the packaged application.
 
 ## 🧩 New: standalone Chrome extension
 
@@ -34,7 +34,7 @@ Use Aster directly beside your current webpage — no desktop app, backend folde
 | Desktop app | Browser extension beta |
 | --- | --- |
 | Windows portable EXE; separate isolated Chrome profile | Runs in desktop Chrome’s side panel and current signed-in tab |
-| OpenRouter, Groq and Gemini | OpenRouter, Groq and direct Google Gemini |
+| OpenRouter, Groq, Gemini and NVIDIA NIM | OpenRouter, Groq and direct Google Gemini |
 | OS-encrypted persistent credentials | Session-only key; paste it again after restarting Chrome |
 | Multiple-tab tools and run recordings | Single active tab, visible DOM actions, no screenshot streaming |
 
@@ -50,9 +50,9 @@ The GitHub extension release is a **beta unpacked download**, not an approved Ch
 
 ## 🚀 Start in minutes
 
-1. **Download** [Aster for Windows x64](https://github.com/Porallanagaraju13/aster-browser-agent/releases/download/v0.12.1/Aster-Browser-Agent-0.12.1-Windows-x64.exe).
-2. **Open** `Aster-Browser-Agent-0.12.1-Windows-x64.exe` directly. No installer or separate backend folder is needed.
-3. **Connect your model.** Choose OpenRouter, Groq, or Google Gemini; paste your own API key and the exact model ID from that provider. Select **Validate and continue**.
+1. **Download** [Aster for Windows x64](https://github.com/Porallanagaraju13/aster-browser-agent/releases/download/v0.12.2/Aster-Browser-Agent-0.12.2-Windows-x64.exe).
+2. **Open** `Aster-Browser-Agent-0.12.2-Windows-x64.exe` directly. No installer or separate backend folder is needed.
+3. **Connect your model.** Choose OpenRouter, Groq, Google Gemini, or NVIDIA NIM; paste your own API key and the exact model ID from that provider. Select **Validate and continue**. Metadata validation does not guarantee a successful inference request; account limits and model behavior are checked when a task runs.
 4. **Describe your task.** Select **Run agent**, review the scope, and choose **Approve task** once.
 5. **Watch and collect.** Follow visible browser actions and the timeline, then use **Open** or **Download** in **Downloads** for the results.
 
@@ -69,8 +69,8 @@ and create a short Word document explaining the page.
 | :--- | :--- |
 | 💻 Windows x64 | The downloadable release is a portable Windows desktop application. |
 | 🌐 Google Chrome | Install Chrome separately. Aster uses its own isolated browser profile. |
-| 🔑 Your own API key | OpenRouter, Groq, or Google Gemini; provider usage may incur charges. |
-| 🧠 A compatible model | Enter an exact model ID with tool/function calling support. Vision is optional for OpenRouter/Groq. |
+| 🔑 Your own API key | OpenRouter, Groq, Google Gemini, or NVIDIA NIM; provider usage may incur charges. |
+| 🧠 A compatible model | Enter an exact model ID with tool/function calling support. Vision is optional for OpenAI-compatible providers. |
 | 📡 Internet | Required for provider requests and browsing websites. |
 
 **You do not need Node.js, Python, backend source files, or an `.env` file to run the portable EXE.** Each person enters their own key and model. Settings can be changed later in the application.
@@ -90,6 +90,8 @@ and create a short Word document explaining the page.
 | 🔐 Your own configuration | Provider keys are encrypted locally using Electron `safeStorage`; Windows uses the operating system's DPAPI. |
 
 The dedicated Chrome window shows browser activity live. The application contains a verified, action-by-action preview—not a continuous video stream of Chrome.
+
+**Desktop v0.12.2:** NVIDIA connects directly to its hosted API; no local GPU is required. Aster now shows a local waiting page while the model chooses its first browser action, with provider-request progress and visible failure details. Opening Chrome is not proof that the model is connected. See [provider setup and troubleshooting](docs/USER_GUIDE.md#provider-setup-and-startup-troubleshooting).
 
 ## 📁 Real files, ready to use
 
@@ -135,11 +137,12 @@ This repository is public. For normal use, download the appropriate release inst
 | `npm run typecheck` | Check main, preload, renderer, and test types |
 | `npm test` | Run automated unit and browser integration tests |
 | `npm run test:e2e` | Test onboarding, production UI, accessibility, and documents |
+| `npm run test:e2e:providers` | Test OpenRouter/Groq/NVIDIA catalog, real browser actions and failures with mock AI |
 | `npm run build` | Create production bundles |
 | `npm run package:win` | Build the portable Windows EXE in `release/` |
 | `npm run test:portable` | Test the packaged EXE, browser actions, and recording |
 
-**v0.12.1 validation:** 89 automated tests passed, along with the packaged browser-action and recording check. The portable check uses an isolated profile and mock provider; it does not replace testing on a separate Windows machine or validating your own provider/key/model.
+**Validation:** see the [v0.12.2 release notes](docs/releases/v0.12.2.md) for exact test results. The portable and provider checks use isolated profiles and mock AI; they do not replace testing on a separate Windows machine or validating your own provider/key/model.
 
 <details>
 <summary><strong>How a task flows through Aster</strong></summary>
@@ -163,7 +166,7 @@ The agent uses short page references rather than asking the model to invent CSS 
 - [User & developer guide](docs/USER_GUIDE.md) — setup, commands, uploads, permissions, browser behavior, and packaging.
 - [Enhancements](ENHANCEMENTS.md) — known limitations and planned improvements.
 - [Third-party notices](THIRD_PARTY_NOTICES.md) — bundled recording-runtime notices.
-- [Release v0.12.1](https://github.com/Porallanagaraju13/aster-browser-agent/releases/tag/v0.12.1) — portable application, release notes, and checksums.
+- [Release v0.12.2](https://github.com/Porallanagaraju13/aster-browser-agent/releases/tag/v0.12.2) — portable application, release notes, and checksums.
 
 ---
 

@@ -39,4 +39,8 @@ describe('task credential redaction', () => {
     expect(JSON.stringify(event)).not.toContain('Example\\@19')
     expect(JSON.stringify(event)).not.toContain('private-token')
   })
+
+  it.each(['nvapi-synthetic-test-key-123', 'gsk_synthetic_test_key_123', 'sk-or-v1-synthetic-test-key-123', `AIza${'A'.repeat(34)}-`, `AIza${'A'.repeat(34)}_`])('redacts recognizable provider keys even when not the active configured key', (key) => {
+    expect(redactSensitiveText(`Untrusted page text: ${key}`)).toBe('Untrusted page text: [REDACTED]')
+  })
 })

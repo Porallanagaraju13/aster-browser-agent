@@ -66,4 +66,13 @@ describe('SettingsStore production hardening', () => {
     await settings.save({ ...value, provider: 'openrouter', model: longModel })
     await expect(settings.get()).resolves.toMatchObject({ model: longModel })
   })
+
+  it('preserves NVIDIA and does not invent a runnable model when no model was entered', async () => {
+    const { settings } = await store()
+    const value = await settings.save({ provider: 'nvidia', model: '', maxSteps: 60, allowlist: [] })
+    expect(value).toMatchObject({ provider: 'nvidia', model: '' })
+    await expect(settings.get()).resolves.toMatchObject({ provider: 'nvidia', model: '' })
+    await settings.save({ ...value, model: 'vendor/exact-model:version' })
+    await expect(settings.get()).resolves.toMatchObject({ provider: 'nvidia', model: 'vendor/exact-model:version' })
+  })
 })

@@ -5,7 +5,8 @@ import type {
   ModelProvider,
   PageObservation
 } from '../shared/types'
-import { OPENAI_COMPATIBLE_ENDPOINTS, PROVIDER_LABELS } from './provider-config'
+import { OPENAI_COMPATIBLE_ENDPOINTS, PROVIDER_LABELS, ProviderRequestError, providerHttpError } from './provider-config'
+import { redactSensitiveText } from './redaction'
 
 export interface PlannerOptions {
   apiKey: string
@@ -13,6 +14,7 @@ export interface PlannerOptions {
   provider?: ModelProvider
   signal?: AbortSignal
   supportsImages?: boolean
+  onProgress?: (message: string) => void
 }
 
 type SelectedPlannerOptions = PlannerOptions & { provider: ModelProvider }
@@ -297,6 +299,7 @@ export class GeminiPlanner implements BrowserPlanner {
   }
 
   async begin(task: string, observation: PageObservation): Promise<PlannerTurn> {
+    notifyProgress(this.options, 'Google Gemini request sent. Waiting for the first browser action.')
     const interaction = (await this.client.interactions.create({
       model: this.options.model,
       generation_config: { max_output_tokens: 16_384 },
@@ -323,6 +326,7 @@ export class GeminiPlanner implements BrowserPlanner {
     outputs: Array<{ action: BrowserAction; result: ActionResult }>,
     observation: PageObservation
   ): Promise<PlannerTurn> {
+    notifyProgress(this.options, 'Google Gemini request sent. Waiting for the next browser action.')
     const input = outputs.map(({ action, result }, index) => ({
       type: 'function_result',
       name: action.name,
@@ -367,6 +371,7 @@ export class GeminiPlanner implements BrowserPlanner {
     if (actions.length > 1) {
       throw new Error('The model returned multiple browser actions. Only one action per observation is allowed.')
     }
+    if (!actions.length) throw new ProviderRequestError('Google Gemini returned no browser action. Choose a model that supports function calling, and start the task again. No completion is claimed.')
 
     return {
       responseId: interaction.id,
@@ -403,7 +408,7 @@ interface CompatibleAssistantMessage {
 interface CompatibleResponse {
   id?: string
   choices?: Array<{ message?: CompatibleAssistantMessage; finish_reason?: string }>
-  error?: { message?: string }
+  error?: { message?: unknown; code?: unknown; status?: unknown }
 }
 
 type CompatibleMessage = Record<string, unknown>
@@ -420,9 +425,10 @@ export class OpenAICompatiblePlanner implements BrowserPlanner {
     private readonly options: SelectedPlannerOptions,
     private readonly fetchImpl: FetchLike = fetch
   ) {
-    if (options.provider === 'google') {
-      throw new Error('The OpenAI-compatible planner requires OpenRouter or Groq.')
+    if (options.provider === 'google' || !Object.hasOwn(OPENAI_COMPATIBLE_ENDPOINTS, options.provider)) {
+      throw new Error('The OpenAI-compatible planner requires OpenRouter, Groq or NVIDIA NIM.')
     }
+    if (!options.apiKey.trim() || !options.model.trim()) throw new ProviderRequestError('Enter an API key and exact model ID before starting a browser task.')
     this.endpoint = OPENAI_COMPATIBLE_ENDPOINTS[options.provider]
     this.useImages = options.supportsImages === true
   }
@@ -475,71 +481,89 @@ export class OpenAICompatiblePlanner implements BrowserPlanner {
   private async requestTurn(): Promise<PlannerTurn> {
     this.options.signal?.throwIfAborted()
     this.trimHistory()
-    let outputLimit = 8_192
+    let outputLimit = this.options.provider === 'nvidia' ? 2_048 : 8_192
+    const outputCap = this.options.provider === 'nvidia' ? 4_096 : 32_768
     for (let attempt = 0; attempt < 3; attempt += 1) {
       this.options.signal?.throwIfAborted()
+      notifyProgress(this.options, `${PROVIDER_LABELS[this.options.provider]} request sent (attempt ${attempt + 1} of 3). Waiting up to 90 seconds for a browser action; Stop remains available.`)
       let response: Response
       let bodyText: string
+      const signal = requestSignal(this.options.signal)
       try {
         response = await this.fetchImpl(this.endpoint, {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${this.options.apiKey}`,
             'Content-Type': 'application/json',
+            Accept: 'application/json',
             ...(this.options.provider === 'openrouter' ? { 'X-Title': 'Aster Browser Agent' } : {})
           },
           body: JSON.stringify({
             model: this.options.model,
-            messages: this.history,
+            messages: this.requestMessages(),
             tools: OPENAI_TOOLS,
             tool_choice: 'auto',
-            parallel_tool_calls: false,
-            max_completion_tokens: outputLimit
-          }),
-          signal: requestSignal(this.options.signal)
+            stream: false,
+            ...(this.options.provider === 'groq' ? { max_completion_tokens: outputLimit } : { max_tokens: outputLimit }),
+            ...(this.options.provider === 'nvidia' ? {} : { parallel_tool_calls: false }),
+            ...(this.options.provider === 'openrouter' ? { provider: { require_parameters: true } } : {})
+          }).replaceAll(this.options.apiKey, '[API key hidden]'),
+          credentials: 'omit', redirect: 'error', cache: 'no-store',
+          signal
         })
-        bodyText = await response.text()
+        bodyText = await limitedResponseText(response, response.ok ? 2 * 1024 * 1024 : 32_768)
       } catch (error) {
         this.options.signal?.throwIfAborted()
-        if (attempt === 2) {
-          const message = error instanceof Error ? error.message : String(error)
-          throw new Error(message.replaceAll(this.options.apiKey, '[API key hidden]'))
+        if (signal.aborted) {
+          notifyProgress(this.options, 'The model request timed out. No browser action was received.')
+          throw new ProviderRequestError(`${PROVIDER_LABELS[this.options.provider]} did not return a browser action within 90 seconds. The request was stopped without an automatic timeout retry. Try a less busy model or check your provider account.`)
         }
-        await retryDelay(attempt, this.options.signal)
-        continue
+        if (error instanceof ProviderRequestError) throw error
+        throw new ProviderRequestError(`${PROVIDER_LABELS[this.options.provider]} could not reach its model endpoint. Check your internet connection or proxy. Redirected endpoints are not accepted; no automatic network retry was made.`)
       }
 
       let body: CompatibleResponse
       try {
         body = JSON.parse(bodyText) as CompatibleResponse
+        if (!body || typeof body !== 'object') throw new Error('Invalid response envelope')
       } catch {
         if ([429, 500, 502, 503, 504].includes(response.status) && attempt < 2) {
+          notifyProgress(this.options, `${PROVIDER_LABELS[this.options.provider]} reported a temporary rate/server error. Retrying the same request within the attempt limit.`)
           await retryDelay(attempt, this.options.signal, response.headers.get('retry-after'))
           continue
         }
-        throw new Error(`${PROVIDER_LABELS[this.options.provider]} returned an unreadable response (${response.status}).`)
+        throw new ProviderRequestError(response.ok ? `${PROVIDER_LABELS[this.options.provider]} returned an unreadable response. No browser action was executed.` : providerHttpError(this.options.provider, response.status, 'request'))
       }
       if (!response.ok) {
-        const detail = body.error?.message?.replaceAll(this.options.apiKey, '[API key hidden]')
+        const detail = typeof body.error?.message === 'string' ? body.error.message : ''
         if ([429, 500, 502, 503, 504].includes(response.status) && attempt < 2) {
+          notifyProgress(this.options, `${PROVIDER_LABELS[this.options.provider]} reported a temporary rate/server error. Retrying the same request within the attempt limit.`)
           await retryDelay(attempt, this.options.signal, response.headers.get('retry-after'))
           continue
         }
         if (response.status === 400 && this.useImages && /image|vision|multimodal/i.test(detail ?? '') && attempt < 2) {
           this.useImages = false
+          notifyProgress(this.options, 'The provider rejected image input. Retrying once with the semantic page text instead.')
           this.removeHistoricalImages()
           this.trimHistory()
           continue
         }
-        throw new Error(
-          `${PROVIDER_LABELS[this.options.provider]} request failed (${response.status})${detail ? `: ${detail}` : '.'}`
-        )
+        throw new ProviderRequestError(providerHttpError(this.options.provider, response.status, 'request'))
+      }
+
+      if (response.status === 202) throw new ProviderRequestError(`${PROVIDER_LABELS[this.options.provider]} queued the request instead of returning an action. This app requires a completed chat response; no browser action was executed.`)
+      if (body.error) {
+        const code = Number(body.error.code ?? body.error.status)
+        throw new ProviderRequestError(Number.isInteger(code) && code >= 400 && code <= 599
+          ? providerHttpError(this.options.provider, code, 'request')
+          : `${PROVIDER_LABELS[this.options.provider]} returned a provider error instead of an action. Check the account quota, exact model ID and tool-calling support. No browser action was executed.`)
       }
 
       const choice = body.choices?.[0]
       if (choice?.finish_reason === 'length') {
-        if (attempt < 2) {
-          outputLimit *= 2
+        if (attempt < 2 && outputLimit < outputCap) {
+          outputLimit = Math.min(outputLimit * 2, outputCap)
+          notifyProgress(this.options, 'The model output was incomplete. Retrying with a larger bounded output limit; no partial action was executed.')
           continue
         }
         throw new Error('The model response was cut off before it finished. No partial file or browser action was executed. Request a smaller document or use a model with a larger output limit.')
@@ -550,20 +574,27 @@ export class OpenAICompatiblePlanner implements BrowserPlanner {
       const rawMessage = choice?.message
       if (!rawMessage) throw new Error(`${PROVIDER_LABELS[this.options.provider]} returned no assistant message.`)
       const toolCalls = rawMessage.tool_calls ?? []
+      if (!Array.isArray(toolCalls) || !toolCalls.length) {
+        notifyProgress(this.options, 'The model returned no browser action. The task cannot continue with a text-only response.')
+        throw new ProviderRequestError(`${PROVIDER_LABELS[this.options.provider]} returned text or an empty response instead of a browser action. Select a chat model with tool/function-calling support. Catalog validation alone does not verify inference. No completion is claimed.`)
+      }
       let actions: BrowserAction[]
       try {
         if (toolCalls.length > 1) throw new Error('The model returned multiple browser actions. Only one action per observation is allowed.')
         actions = toolCalls.map((call) => {
-          if (call.type !== 'function' || !call.id) throw new Error('The model returned an invalid tool call.')
+          if (!call || call.type !== 'function' || typeof call.id !== 'string' || !call.id || call.id.length > 200 || typeof call.function?.name !== 'string' || typeof call.function?.arguments !== 'string') throw new Error('The model returned an invalid tool call.')
           return {
             name: validatedToolName(call.function?.name),
             arguments: parseToolArguments(call.function.name, call.function.arguments),
             callId: call.id
           }
         })
+        if (JSON.stringify(actions).includes(this.options.apiKey)) throw new ProviderRequestError('The model action contained the provider API key. It was blocked before any browser or file action.')
       } catch (error) {
-        if (attempt < 2) {
-          outputLimit *= 2
+        if (error instanceof ProviderRequestError) throw error
+        if (attempt < 2 && outputLimit < outputCap) {
+          outputLimit = Math.min(outputLimit * 2, outputCap)
+          notifyProgress(this.options, 'The model returned an invalid browser action. Retrying within the action/output limits; nothing from that response was executed.')
           continue
         }
         throw error
@@ -578,15 +609,28 @@ export class OpenAICompatiblePlanner implements BrowserPlanner {
       this.removeHistoricalImages()
 
       return {
-        responseId: body.id ?? `compatible-${Date.now()}`,
-        message: compatibleText(rawMessage.content),
+        responseId: typeof body.id === 'string' && body.id.length <= 200 ? body.id : `compatible-${Date.now()}`,
+        message: redactSensitiveText(compatibleText(rawMessage.content), [this.options.apiKey]) ?? '',
         actions
       }
     }
     throw new Error('The model request could not be completed after three attempts.')
   }
 
-  private observationContent(text: string, observation: PageObservation): Array<Record<string, unknown>> {
+  private requestMessages(): CompatibleMessage[] {
+    if (this.options.provider !== 'nvidia') return this.history
+    // Some hosted NIM chat templates reject adjacent user turns or text-part arrays.
+    const messages: CompatibleMessage[] = []
+    for (const message of this.history) {
+      const previous = messages.at(-1)
+      if (message.role === 'user' && previous?.role === 'user' && typeof previous.content === 'string' && typeof message.content === 'string') previous.content += `\n\n${message.content}`
+      else messages.push({ ...message })
+    }
+    return messages
+  }
+
+  private observationContent(text: string, observation: PageObservation): string | Array<Record<string, unknown>> {
+    if (!this.useImages) return text
     return [
       { type: 'text', text },
       ...(this.useImages ? [{ type: 'image_url', image_url: { url: observation.screenshotDataUrl } }] : [])
@@ -596,9 +640,10 @@ export class OpenAICompatiblePlanner implements BrowserPlanner {
   private removeHistoricalImages(): void {
     for (const message of this.history) {
       if (!Array.isArray(message.content)) continue
-      message.content = message.content.filter((part) =>
+      const textParts = message.content.filter((part) =>
         typeof part === 'object' && part !== null && (part as { type?: string }).type !== 'image_url'
       )
+      message.content = this.useImages ? textParts : textParts.map((part) => (part as { text?: string }).text ?? '').join('\n')
     }
   }
 
@@ -621,6 +666,31 @@ export class OpenAICompatiblePlanner implements BrowserPlanner {
       throw new Error('The current page observation exceeds the model context budget. Narrow the task or page before trying again.')
     }
   }
+}
+
+function notifyProgress(options: PlannerOptions, message: string): void {
+  try { options.onProgress?.(message) } catch { /* Progress UI failure must not change action semantics. */ }
+}
+
+async function limitedResponseText(response: Response, maxBytes: number): Promise<string> {
+  if (Number(response.headers.get('content-length')) > maxBytes) {
+    await response.body?.cancel().catch(() => undefined)
+    throw new ProviderRequestError('The provider response exceeded the safe size limit. Request a smaller document or fewer records.')
+  }
+  if (!response.body) throw new ProviderRequestError('The provider returned an empty response body.')
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let bytes = 0, text = ''
+  try {
+    while (true) {
+      const chunk = await reader.read()
+      if (chunk.done) break
+      bytes += chunk.value.byteLength
+      if (bytes > maxBytes) { await reader.cancel(); throw new ProviderRequestError('The provider response exceeded the safe size limit. Request a smaller document or fewer records.') }
+      text += decoder.decode(chunk.value, { stream: true })
+    }
+    return text + decoder.decode()
+  } finally { reader.releaseLock() }
 }
 
 function compactObservation(observation: PageObservation): Record<string, unknown> {
@@ -704,7 +774,7 @@ function compatibleText(content: CompatibleAssistantMessage['content']): string 
   if (typeof content === 'string') return content.trim()
   if (!Array.isArray(content)) return ''
   return content
-    .filter((part) => part.type === 'text' && typeof part.text === 'string')
+    .filter((part) => part && part.type === 'text' && typeof part.text === 'string')
     .map((part) => part.text)
     .join('\n')
     .trim()

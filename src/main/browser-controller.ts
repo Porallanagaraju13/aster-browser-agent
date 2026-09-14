@@ -13,6 +13,7 @@ import { evaluateNavigation, normalizeAllowlistEntry } from './safety'
 import { saveDownloadableFile, type PdfRenderer } from './document-exporter'
 import { copyUniqueArtifact, writeUniqueArtifact } from './artifact-writer'
 import { requestedUploadPaths, validateUploadFiles, validateWebsiteUpload } from './upload-files'
+import { isStartupPage, showStartupPage } from './startup-page'
 
 interface BrowserControllerOptions {
   profileDir: string
@@ -44,6 +45,7 @@ export class BrowserController {
   private readonly refFrames = new WeakMap<Page, Map<string, Frame>>()
   private readonly cursorPositions = new WeakMap<Page, { x: number; y: number }>()
   private readonly allowedHosts = new Set<string>()
+  private readonly startupPages = new WeakSet<Page>()
   private readonly videoDir: string
   private readonly downloadDir: string
 
@@ -90,6 +92,9 @@ export class BrowserController {
     })
     const initial = this.context.pages()[0] ?? (await this.context.newPage())
     await this.registerPage(initial)
+    // Keep about:blank and its navigation policy; only give an untouched initial
+    // document a static local explanation while the first model request is pending.
+    if (await showStartupPage(initial).catch(() => false)) this.startupPages.add(initial)
 
     this.context.on('page', (page) => {
       void this.registerPage(page, true).catch((error) => {
@@ -441,7 +446,11 @@ export class BrowserController {
 
   async observe(): Promise<PageObservation> {
     const page = this.requirePage()
-    const snapshot = await this.snapshotDom(page)
+    const localStartup = this.startupPages.has(page) && await isStartupPage(page)
+    // The human-facing startup screen is not website evidence or an action target.
+    // Preserve the original empty about:blank semantic observation for the planner.
+    const snapshot: SnapshotResult = localStartup ? { text: '', elements: [] } : await this.snapshotDom(page)
+    if (localStartup) this.refFrames.set(page, new Map())
     this.elementSnapshots.set(
       page,
       new Map(snapshot.elements.map((element) => [element.ref, element]))
@@ -458,7 +467,7 @@ export class BrowserController {
 
     return {
       url: page.url(),
-      title: await page.title(),
+      title: localStartup ? '' : await page.title(),
       text: snapshot.text,
       elements: snapshot.elements,
       screenshotDataUrl: `data:image/png;base64,${screenshot.toString('base64')}`,

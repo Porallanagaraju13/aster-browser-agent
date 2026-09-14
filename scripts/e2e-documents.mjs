@@ -1,5 +1,4 @@
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
-import os from 'node:os'
+import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { inflateSync } from 'node:zlib'
 import { execFile } from 'node:child_process'
@@ -7,14 +6,13 @@ import { promisify } from 'node:util'
 import { build } from 'esbuild'
 import { PDFDocument, PDFRawStream } from 'pdf-lib'
 import { _electron as electron } from 'playwright-core'
+import { assertDesktopIsolation, closeDesktopTest, createDesktopTestProfile, desktopLaunchOptions, desktopTestEnvironment, projectRoot } from './fixtures/desktop-test-isolation.mjs'
 
-const projectRoot = path.resolve(import.meta.dirname, '..')
-const dataDir = await mkdtemp(path.join(os.tmpdir(), 'aster-documents-e2e-'))
+const dataDir = await createDesktopTestProfile('documents-e2e')
 const helperPath = path.join(dataDir, 'document-helpers.cjs')
-const environment = { ...process.env, GEMINI_API_KEY: 'e2e-placeholder-key' }
-delete environment.OPENROUTER_API_KEY
-delete environment.GROQ_API_KEY
-environment.DOTENV_CONFIG_PATH = path.join(dataDir, 'no-environment-file')
+// This deliberate fixture bypasses onboarding only. The pre-startup guard denies every provider request.
+const fixtureProviderEnvironment = { GEMINI_API_KEY: 'e2e-placeholder-key' }
+const environment = { ...desktopTestEnvironment(dataDir), ...fixtureProviderEnvironment }
 let application
 
 try {
@@ -28,12 +26,8 @@ try {
     logLevel: 'silent'
   })
 
-  application = await electron.launch({
-    args: ['.', `--user-data-dir=${dataDir}`],
-    cwd: projectRoot,
-    env: environment,
-    timeout: 90_000
-  })
+  application = await electron.launch({ ...desktopLaunchOptions(dataDir), env: environment })
+  await assertDesktopIsolation(application, dataDir, fixtureProviderEnvironment)
   let page = await application.firstWindow()
   await page.getByText('Aster', { exact: true }).waitFor()
 
@@ -154,10 +148,10 @@ try {
     await page.waitForTimeout(50)
   }
   if (!copied?.equals(bytes)) throw new Error('The Download button did not save an exact copy through the native dialog.')
+  await assertDesktopIsolation(application, dataDir, fixtureProviderEnvironment)
   await application.close()
-  application = await electron.launch({
-    args: ['.', `--user-data-dir=${dataDir}`], cwd: projectRoot, env: environment, timeout: 90_000
-  })
+  application = await electron.launch({ ...desktopLaunchOptions(dataDir), env: environment })
+  await assertDesktopIsolation(application, dataDir, fixtureProviderEnvironment)
   page = await application.firstWindow()
   await page.getByText('Aster', { exact: true }).waitFor()
   const afterRestart = await page.evaluate(() => window.browserAgent.listDownloads())
@@ -170,7 +164,7 @@ try {
   console.log('PASS Downloads UI saves an exact copy through the native dialog')
   console.log('PASS generated downloads remain accessible after application restart')
   console.log('PASS repeated file names preserve both deliverables')
+  await assertDesktopIsolation(application, dataDir, fixtureProviderEnvironment)
 } finally {
-  if (application) await application.close().catch(() => undefined)
-  await rm(dataDir, { recursive: true, force: true }).catch(() => undefined)
+  await closeDesktopTest(application, dataDir)
 }

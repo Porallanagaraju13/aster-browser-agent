@@ -94,6 +94,51 @@ describe('AgentRunner isolated lifecycle', () => {
     expect((await terminal(events)).status).toBe('stopped')
     expect(mocked.browser).not.toHaveBeenCalled()
     expect(mocked.planner).not.toHaveBeenCalled()
+    expect(events.some(event => event.title === 'Waiting for first AI action')).toBe(false)
+  })
+
+  it('distinguishes browser startup from a pending first provider response without claiming success', async () => {
+    const response = deferred<PlannerTurn>()
+    releases.push(() => response.resolve(finish))
+    const browser = browserMock()
+    browser.observe.mockResolvedValue({ ...observation, url: 'about:blank', title: '', text: '' })
+    const begin = vi.fn(() => response.promise)
+    mocked.browser.mockReturnValue(browser)
+    mocked.planner.mockReturnValue({ begin, continue: vi.fn() })
+    const { runner, events } = await harness()
+    await runner.start({ ...input, provider: 'openrouter' })
+    await vi.waitFor(() => expect(begin).toHaveBeenCalledOnce())
+    expect(events.some(event => event.title === 'Browser ready' && event.detail?.includes('not been verified'))).toBe(true)
+    expect(events.some(event => event.title === 'Waiting for first AI action' && event.detail?.includes('OpenRouter'))).toBe(true)
+    expect(events.some(event => event.title === 'Model response received')).toBe(false)
+    expect(events.some(event => event.type === 'complete')).toBe(false)
+    expect(browser.execute).not.toHaveBeenCalled()
+    const progress = mocked.planner.mock.calls[0][0].onProgress as (message: string) => void
+    progress('OpenRouter request sent; waiting for a response.')
+    expect(events.at(-1)?.title).toBe('Model request')
+    expect(events.at(-1)?.detail).toContain('waiting for a response')
+    progress(`Unexpected diagnostic containing ${input.apiKey}`)
+    expect(events.at(-1)?.detail).not.toContain(input.apiKey!)
+    expect(events.at(-1)?.detail).toContain('[REDACTED]')
+    response.resolve(finish)
+    expect((await terminal(events)).status).toBe('completed')
+    expect(events.some(event => event.title === 'Model response received')).toBe(true)
+  })
+
+  it('surfaces a failed first model request after browser startup without claiming browser action success', async () => {
+    const browser = browserMock()
+    mocked.browser.mockReturnValue(browser)
+    mocked.planner.mockReturnValue({ begin: vi.fn(async () => { throw new Error('OpenRouter request timed out before any browser action.') }), continue: vi.fn() })
+    const { runner, events } = await harness()
+    await runner.start({ ...input, provider: 'openrouter' })
+    const result = await terminal(events)
+    expect(result.status).toBe('failed')
+    expect(result.detail).toContain('request timed out')
+    expect(events.some(event => event.title === 'Waiting for first AI action')).toBe(true)
+    expect(events.some(event => event.title === 'Action completed')).toBe(false)
+    expect(events.some(event => event.type === 'complete')).toBe(false)
+    expect(browser.execute).not.toHaveBeenCalled()
+    expect(browser.close).toHaveBeenCalledOnce()
   })
 
   it('waits for browser startup to settle before releasing a stopped run', async () => {
@@ -129,6 +174,7 @@ describe('AgentRunner isolated lifecycle', () => {
     const first = await runner.start(input)
     await vi.waitFor(() => expect(mocked.planner).toHaveBeenCalledTimes(1))
     const firstSignal = mocked.planner.mock.calls[0][0].signal as AbortSignal
+    const firstProgress = mocked.planner.mock.calls[0][0].onProgress as (message: string) => void
     await runner.stop()
     expect(firstSignal.aborted).toBe(true)
     expect(firstBrowser.close).toHaveBeenCalledTimes(1)
@@ -136,6 +182,7 @@ describe('AgentRunner isolated lifecycle', () => {
     expect(second.ok).toBe(true)
     await vi.waitFor(() => expect(mocked.planner).toHaveBeenCalledTimes(2))
     const oldEventCount = events.filter((event) => event.runId === first.runId).length
+    firstProgress('A stopped provider request sent a late progress update.')
     oldTurn.resolve({ responseId: 'late', message: 'Old response', actions: [{ name: 'click', callId: 'late', arguments: { ref: 'e1' } }] })
     await Promise.resolve()
     await Promise.resolve()
@@ -168,6 +215,7 @@ describe('AgentRunner isolated lifecycle', () => {
     const { runner, events } = await harness()
     await runner.start(input)
     expect((await terminal(events)).status).toBe('incomplete')
+    expect(events.filter(event => event.status).at(-1)?.detail).toContain('no browser action')
     expect(events.some((event) => event.type === 'complete')).toBe(false)
   })
 

@@ -1,6 +1,7 @@
+import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
-import { mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, realpath, rm, stat } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { _electron as electron, chromium } from 'playwright-core'
@@ -20,6 +21,8 @@ const environment = { ...process.env, GEMINI_API_KEY: 'smoke-placeholder-not-a-v
 environment.GEMINI_MODEL = 'gemini-portable-smoke-fixture'
 delete environment.OPENROUTER_API_KEY
 delete environment.GROQ_API_KEY
+delete environment.NVIDIA_API_KEY
+delete environment.NVIDIA_MODEL
 delete environment.ELECTRON_RENDERER_URL
 delete environment.ELECTRON_RUN_AS_NODE
 delete environment.CHROME_PATH
@@ -249,6 +252,10 @@ try {
     await closePortable()
   } finally {
     if (fixture) await fixture.close()
-    await rm(userDataDir, { recursive: true, force: true, maxRetries: 4, retryDelay: 250 })
+    const cleanupPath = await realpath(userDataDir)
+    const tempRoot = await realpath(os.tmpdir())
+    const relative = path.relative(tempRoot, cleanupPath)
+    assert.ok(relative && !relative.startsWith('..') && !path.isAbsolute(relative) && !relative.includes(path.sep) && /^aster-portable-smoke-/.test(path.basename(cleanupPath)), 'Cleanup must stay in the owned temporary profile')
+    await rm(cleanupPath, { recursive: true, force: true, maxRetries: 4, retryDelay: 250 })
   }
 }

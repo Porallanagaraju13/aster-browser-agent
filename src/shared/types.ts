@@ -10,7 +10,7 @@ export type RunStatus =
   | 'failed'
   | 'stopped'
 
-export type ModelProvider = 'google' | 'openrouter' | 'groq'
+export type ModelProvider = 'google' | 'openrouter' | 'groq' | 'nvidia'
 
 export type AgentEventType =
   | 'status'

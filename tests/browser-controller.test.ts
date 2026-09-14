@@ -5,6 +5,8 @@ import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import ExcelJS from 'exceljs'
 import { BrowserController } from '../src/main/browser-controller'
+import { isStartupPage, showStartupPage, STARTUP_PAGE_TITLE } from '../src/main/startup-page'
+import type { Page } from 'playwright-core'
 import type { AddressInfo } from 'node:net'
 
 describe('BrowserController integration', () => {
@@ -77,6 +79,24 @@ describe('BrowserController integration', () => {
       const documentPaths = [path.join(tempRoot, 'report.pdf'), path.join(tempRoot, 'data.xlsx')]
       await Promise.all(documentPaths.map((filePath) => writeFile(filePath, 'fixture attachment')))
       await controller.start()
+      // The user gets a branded local explanation, while the planner still sees
+      // the original empty about:blank state and no fabricated website evidence.
+      const initialObservation = await controller.observe()
+      expect(initialObservation.url).toBe('about:blank')
+      expect(initialObservation.title).toBe('')
+      expect(initialObservation.text).toBe('')
+      expect(initialObservation.elements).toEqual([])
+      expect(initialObservation.tabs[0].title).toBe(STARTUP_PAGE_TITLE)
+      const initialPage = (controller as unknown as { activePage: Page }).activePage
+      expect(await isStartupPage(initialPage)).toBe(true)
+      expect(await showStartupPage(initialPage)).toBe(false) // Never overwrite an existing document.
+      expect(await initialPage.locator('h1').innerText()).toBe('Your browser is ready.')
+      await initialPage.evaluate(() => {
+        window.document.head.replaceChildren()
+        window.document.body.innerHTML = '<p>Existing local notes must remain untouched.</p>'
+      })
+      expect(await showStartupPage(initialPage)).toBe(false)
+      expect(await initialPage.locator('body').innerText()).toBe('Existing local notes must remain untouched.')
 
       const outsideBaseline = controller.navigationDecision('https://example.com')
       expect(outsideBaseline.allowed).toBe(false)
@@ -90,6 +110,8 @@ describe('BrowserController integration', () => {
         callId: 'navigate-1'
       })
       expect(navigation.ok).toBe(true)
+      expect(await showStartupPage(initialPage)).toBe(false)
+      expect(await isStartupPage(initialPage)).toBe(false)
 
       const firstObservation = await controller.observe()
       expect(firstObservation.title).toBe('Agent fixture')
@@ -198,7 +220,7 @@ describe('BrowserController integration', () => {
 
       const secondObservation = await controller.observe()
       expect(secondObservation.text).toContain('Verified cursor')
-      expect(secondObservation.screenshotPath).toContain('step-002.png')
+      expect(secondObservation.screenshotPath).toContain('step-003.png')
       const staleClick = await controller.execute({ name: 'click', arguments: { ref: button!.ref }, callId: 'stale-click' })
       expect(staleClick.ok).toBe(false)
       expect(staleClick.message).toContain('stale')

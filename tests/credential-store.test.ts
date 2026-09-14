@@ -53,4 +53,15 @@ describe('CredentialStore', () => {
     await expect(store.save({ provider: 'groq', model: 'model', apiKey: 'key' }))
       .rejects.toThrow('encryption is unavailable')
   })
+
+  it('round-trips NVIDIA credentials through the existing encrypted store without a provider fallback', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'aster-credential-test-'))
+    created.push(root)
+    const file = path.join(root, 'credentials.json')
+    const store = new CredentialStore(file, encryption)
+    const credential = { provider: 'nvidia' as const, model: 'vendor/exact-model:version', apiKey: 'nvapi-synthetic-test-key', supportsImages: false }
+    await store.save(credential)
+    expect(await readFile(file, 'utf8')).not.toContain(credential.apiKey)
+    await expect(new CredentialStore(file, encryption).get()).resolves.toEqual(credential)
+  })
 })

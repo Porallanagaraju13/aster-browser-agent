@@ -122,7 +122,7 @@ export class AgentRunner {
         return
       }
       this.checkActive(context)
-      this.setStatus(context, 'starting', 'Starting isolated browser', 'Preparing the approved task.')
+      this.setStatus(context, 'starting', 'Starting isolated browser', 'Opening Chrome for the approved task. No agent action has run yet.')
       context.browser = new BrowserController({
         profileDir: this.options.profileDir, artifactDir: context.dir, allowlist: input.allowlist,
         renderPdf: this.options.renderPdf,
@@ -135,18 +135,24 @@ export class AgentRunner {
       if (input.capabilities?.unrestrictedNavigation) context.browser.enableTaskWideNavigation()
       const planner = createPlanner({
         apiKey: context.apiKey, model: input.model, provider: input.provider,
-        supportsImages: input.supportsImages, signal: context.abort.signal
+        supportsImages: input.supportsImages, signal: context.abort.signal,
+        onProgress: (message) => {
+          if (this.active === context && !context.abort.signal.aborted) this.setStatus(context, 'running', 'Model request', message)
+        }
       })
-      this.setStatus(context, 'running', 'Agent is working', `Provider: ${PROVIDER_LABELS[input.provider]} · Model: ${input.model}`)
+      this.setStatus(context, 'running', 'Browser ready', `The isolated browser is open. The next step requests a browser action from ${PROVIDER_LABELS[input.provider]}; a successful model response has not been verified yet.`)
       let observation = await this.captureObservation(context, 0)
       const planTask = `${input.task}\n\nAPPROVED RUN LIMITS:\n${context.scope.approvalPreview()}\nAllowed sites: ${input.capabilities?.unrestrictedNavigation ? 'HTTP(S) web navigation allowed for this task' : input.allowlist.join(', ')}\nAttached files available for website upload (paths, not document contents):\n${(input.attachments ?? []).map((file) => JSON.stringify(file)).join('\n') || '(none)'}\nCreate requested files with save_file/save_spreadsheet or download; finish with outcome=incomplete if blocked or a requested format is unsupported.`
+      this.setStatus(context, 'running', 'Waiting for first AI action', `Provider: ${PROVIDER_LABELS[input.provider]} · Model: ${input.model}. The browser stays on its current page until the model returns an approved action. Check Activity for a response or error; Stop remains available.`)
       let turn = await abortable(planner.begin(planTask, observation), context.abort.signal)
+      this.checkActive(context)
+      this.setStatus(context, 'running', 'Model response received', 'Validating the requested browser action against this task’s approved limits.')
       const expectation = expectedDeliverables(input.task)
       for (let step = 1; step <= input.maxSteps; step += 1) {
         this.checkActive(context)
         if (turn.message) this.emit(context, 'thought', 'Agent update', turn.message, { step })
         if (!turn.actions.length) {
-          summary = turn.message || 'The model stopped without an explicit completion result.'
+          summary = `The model returned no browser action, so task completion was not verified.${turn.message ? ` Model message: ${turn.message}` : ' Check the selected model’s tool/function support or try a more specific task.'}`
           break
         }
         const outputs: Array<{ action: BrowserAction; result: ActionResult }> = []
@@ -192,7 +198,10 @@ export class AgentRunner {
           summary = `Stopped at the ${input.maxSteps}-step limit before the task was completed.`
           break
         }
+        this.setStatus(context, 'running', 'Waiting for next AI action', `${PROVIDER_LABELS[input.provider]} is planning from the latest page observation. No new browser action will run until a response is received.`)
         turn = await abortable(planner.continue(turn.responseId, outputs, observation), context.abort.signal)
+        this.checkActive(context)
+        this.setStatus(context, 'running', 'Model response received', 'Validating the next browser action against this task’s approved limits.')
       }
     } catch (error) {
       outcome = context.abort.signal.aborted ? 'stopped' : 'failed'
